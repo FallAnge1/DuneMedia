@@ -1,0 +1,25 @@
+[project]
+name = "videoarchive-uploader"
+version = "0.1.0"
+description = "Программа-загрузчик видеоархива: превью, ИИ-теги, загрузка в Telegram"
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.7",
+  "telethon>=1.36,<2",
+  "cryptg>=0.4",
+  "httpx>=0.27",
+  "platformdirs>=4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4", "pyinstaller>=6"]
+
+[project.gui-scripts]
+videoarchive = "videoarchive.app:main"
+
+[tool.setuptools.packages.find]
+include = ["videoarchive*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
