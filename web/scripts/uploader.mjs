@@ -11,6 +11,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { wranglerArgs } from "./wrangler-path.mjs";
 
 const args = process.argv.slice(2);
 const command = args.shift();
@@ -20,11 +21,8 @@ const rest = args.filter((a) => a !== "--local" && a !== "--remote");
 const sql = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 function d1(command) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", "DB", local ? "--local" : "--remote", "--json", "--command", command],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  );
+  const [node, args] = wranglerArgs(["d1", "execute", "DB", local ? "--local" : "--remote", "--json", "--command", command]);
+  const out = execFileSync(node, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
   const parsed = JSON.parse(out);
   return parsed[0]?.results ?? [];
 }

@@ -13,6 +13,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { wranglerArgs } from "./wrangler-path.mjs";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -81,14 +82,11 @@ function localToken() {
   // Создаём локального загрузчика «Seed» прямо в локальной D1.
   const token = `va_seed_${randomBytes(16).toString("hex")}`;
   const hash = createHash("sha256").update(token).digest("hex");
-  execFileSync(
-    "npx",
-    [
-      "wrangler", "d1", "execute", "DB", "--local", "--command",
-      `INSERT INTO uploaders (name, token_hash, created_at, revoked) VALUES ('Seed', '${hash}', ${Date.now()}, 0)`,
-    ],
-    { stdio: "ignore" },
-  );
+  const [node, args] = wranglerArgs([
+    "d1", "execute", "DB", "--local", "--command",
+    `INSERT INTO uploaders (name, token_hash, created_at, revoked) VALUES ('Seed', '${hash}', ${Date.now()}, 0)`,
+  ]);
+  execFileSync(node, args, { stdio: "ignore" });
   return token;
 }
 
