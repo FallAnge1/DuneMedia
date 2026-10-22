@@ -1,0 +1,92 @@
+# Проверка установщиков-приглашений на настоящих Windows и Mac: ставит последнюю сборку программы
+# (релиз uploader-latest) так же, как это делает человек, получивший приглашение.
+# Запускается после каждой новой сборки программы и при изменении скриптов установки.
+name: Проверка установки
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Сборка загрузчика"]
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths: ["install/**", "web/scripts/invite*.mjs", ".github/workflows/install-test.yml"]
+
+jobs:
+  test-install:
+    name: Установка по приглашению (${{ matrix.os }})
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      VA_NO_LAUNCH: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Файлы приглашения
+        shell: bash
+        run: |
+          CODE=$(node -e 'console.log(Buffer.from(JSON.stringify({v:1,name:"Проверка CI",site_url:"https://example.com",uploader_token:"va_ci_test",channel:"ci_channel",repo:process.env.GITHUB_REPOSITORY,api_id:12345,api_hash:"abc"})).toString("base64url"))')
+          node web/scripts/invite-files.mjs "$RUNNER_TEMP/invite" "$CODE"
+          ls -la "$RUNNER_TEMP/invite"
+
+      - name: Установка (Windows, двойной щелчок по .bat)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bat = Join-Path $env:RUNNER_TEMP 'invite\Установить (Windows).bat'
+          # «< NUL» — чтобы pause в конце батника не ждал нажатия клавиши.
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', "`"$bat`" < NUL" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Установщик вернул $($p.ExitCode)" }
+          $cfg = Get-Content -Raw -Encoding UTF8 (Join-Path $env:APPDATA 'VideoArchive\config.json') | ConvertFrom-Json
+          if ($cfg.site_url -ne 'https://example.com' -or $cfg.uploader_token -ne 'va_ci_test' -or $cfg.api_id -ne 12345) { throw "Настройки не записаны: $($cfg | ConvertTo-Json)" }
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $env:APPDATA 'VideoArchive\config.json'))
+          if ($bytes[0] -eq 0xEF) { throw 'config.json записан с BOM' }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\VideoArchive\VideoArchive.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--selftest','--selftest-report=selftest.txt' -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw 'Самопроверка установленной программы не прошла' }
+
+      - name: Повторная установка, когда программа уже стоит в другой папке (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Inno Setup запоминает прошлую папку установки — приглашение должно найти программу и там.
+          $default = Join-Path $env:LOCALAPPDATA 'Programs\VideoArchive'
+          Start-Process -FilePath (Join-Path $default 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $default 'VideoArchive.exe')); $i++) { Start-Sleep 1 }
+          if (Test-Path (Join-Path $default 'VideoArchive.exe')) { throw 'Удаление не сработало' }
+          $setup = Join-Path $env:RUNNER_TEMP 'setup.exe'
+          Invoke-WebRequest "https://github.com/$env:GITHUB_REPOSITORY/releases/download/uploader-latest/VideoArchive-Setup.exe" -OutFile $setup
+          $custom = 'C:\Мои программы\Видеоархив'
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$custom`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $custom 'VideoArchive.exe'))) { throw 'Не удалось поставить программу в свою папку' }
+
+          $bat = Join-Path $env:RUNNER_TEMP 'invite\Установить (Windows).bat'
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', "`"$bat`" < NUL" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Установщик вернул $($p.ExitCode)" }
+          if (Test-Path (Join-Path $default 'VideoArchive.exe')) { throw 'Программа поставилась второй копией в стандартную папку' }
+          $p = Start-Process -FilePath (Join-Path $custom 'VideoArchive.exe') -ArgumentList '--selftest','--selftest-report=selftest2.txt' -Wait -PassThru
+          Get-Content selftest2.txt
+          if ($p.ExitCode -ne 0) { throw 'Самопроверка не прошла' }
+
+      - name: Установка (Mac, .command)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bash "$RUNNER_TEMP/invite/Установить (Mac).command"
+          APP=/Applications/VideoArchive.app; [ -d "$APP" ] || APP="$HOME/Applications/VideoArchive.app"
+          test -d "$APP"
+          CFG="$HOME/Library/Application Support/VideoArchive/config.json"
+          cat "$CFG"
+          grep -q '"site_url": "https://example.com"' "$CFG"
+          grep -q '"uploader_token": "va_ci_test"' "$CFG"
+          grep -q '"api_id": 12345' "$CFG"
+          "$APP/Contents/MacOS/VideoArchive" --selftest --selftest-report=selftest.txt || { cat selftest.txt; exit 1; }
+          cat selftest.txt

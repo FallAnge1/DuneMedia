@@ -14,6 +14,39 @@ $ProgressPreference = 'SilentlyContinue'  # без этого Invoke-WebRequest 
 
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
+# Куда установщик на самом деле поставил программу. Inno Setup запоминает прошлую папку установки,
+# поэтому она может отличаться от стандартной %LOCALAPPDATA%\Programs\VideoArchive.
+$AppKey = '{6E0B8E5A-4F7B-4C5E-9F7A-2D1C0B9A8E11}_is1'
+function Get-InstallDir {
+  foreach ($root in 'HKCU:', 'HKLM:') {
+    foreach ($sub in 'Software\Microsoft\Windows\CurrentVersion\Uninstall', 'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall') {
+      $item = Get-ItemProperty -Path "$root\$sub\$AppKey" -ErrorAction SilentlyContinue
+      if ($item -and $item.InstallLocation) { return $item.InstallLocation.TrimEnd('\') }
+    }
+  }
+  return $null
+}
+function Find-VideoArchive {
+  $dirs = @()
+  $reg = Get-InstallDir
+  if ($reg) { $dirs += $reg }
+  $dirs += (Join-Path $env:LOCALAPPDATA 'Programs\VideoArchive')
+  if ($env:ProgramFiles) { $dirs += (Join-Path $env:ProgramFiles 'VideoArchive') }
+  $script:searched = $dirs | Select-Object -Unique
+  foreach ($d in $script:searched) {
+    $exe = Join-Path $d 'VideoArchive.exe'
+    if (Test-Path $exe) { return $exe }
+  }
+  return $null
+}
+function Show-LogTail($path) {
+  if (Test-Path $path) {
+    Say ''
+    Say 'Последние строки журнала установки:' 'DarkGray'
+    Get-Content -Path $path -Tail 12 -ErrorAction SilentlyContinue | ForEach-Object { Say "  $_" 'DarkGray' }
+  }
+}
+
 try {
   Say ''
   Say 'Видеоархив — установка программы-загрузчика' 'White'
@@ -40,11 +73,26 @@ try {
   Say "Скачиваю программу (около 150 МБ)..."
   Invoke-WebRequest -Uri $url -OutFile $setup -UseBasicParsing
   Say 'Устанавливаю...'
-  $p = Start-Process -FilePath $setup -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS' -Wait -PassThru
-  if ($p.ExitCode -ne 0) { throw "Установщик завершился с кодом $($p.ExitCode)" }
+  $log = Join-Path $env:TEMP 'VideoArchive-install.log'
+  $p = Start-Process -FilePath $setup -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', "/LOG=`"$log`"" -Wait -PassThru
+  if ($p.ExitCode -ne 0) { throw "Установщик завершился с кодом $($p.ExitCode). Подробности: $log" }
   Remove-Item $setup -ErrorAction SilentlyContinue
-  $exe = Join-Path $env:LOCALAPPDATA 'Programs\VideoArchive\VideoArchive.exe'
-  if (-not (Test-Path $exe)) { throw "Программа не найдена после установки: $exe" }
+  $exe = Find-VideoArchive
+  if (-not $exe) {
+    $dir = Get-InstallDir
+    if ($dir -and (Test-Path (Join-Path $dir '_internal'))) {
+      # Папка есть, а самого exe нет — его почти наверняка удалил антивирус.
+      Say ''
+      Say "Программа установилась в $dir, но файл VideoArchive.exe пропал — скорее всего, его удалил антивирус." 'Yellow'
+      Say 'Защитник Windows иногда ошибочно принимает неподписанные программы за вирус. Что сделать:' 'Yellow'
+      Say '  1. Пуск -> «Безопасность Windows» -> «Защита от вирусов и угроз» -> «Журнал защиты».'
+      Say '  2. Найдите запись про VideoArchive.exe -> «Действия» -> «Разрешить на устройстве» (или «Восстановить»).'
+      Say '  3. Запустите этот файл ещё раз.'
+      throw 'VideoArchive.exe удалён антивирусом'
+    }
+    Show-LogTail $log
+    throw "Программа не найдена после установки (искал в $($script:searched -join '; '))"
+  }
   Say 'Программа установлена.' 'Green'
 
   # ---- настройки из приглашения ----
