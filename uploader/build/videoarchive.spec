@@ -42,6 +42,14 @@ a = Analysis(
     excludes=EXCLUDES,
     noarchive=False,
 )
+# Библиотеки Qt, которые интерфейс на виджетах не использует (программный OpenGL, Quick/QML, PDF и т. п.).
+DROP = ("opengl32sw", "qt6quick", "qt6qml", "qt6pdf", "qt6virtualkeyboard", "qt6webengine", "qt6charts", "qt6multimedia",
+        "qt6shadertools", "qt6labs", "qt63d")
+before = len(a.binaries)
+a.binaries = [b for b in a.binaries if not any(Path(b[0]).name.lower().startswith(p) or p in Path(b[1]).name.lower()
+                                                for p in DROP)]
+print(f"Исключено библиотек Qt: {before - len(a.binaries)}")
+
 pyz = PYZ(a.pure)
 
 if sys.platform == "darwin":
