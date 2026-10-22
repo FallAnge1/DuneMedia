@@ -1,12 +1,14 @@
 # Сборка программы-загрузчика для Windows и macOS.
-# Запускается вручную (Actions → «Сборка загрузчика» → Run workflow) или тегом uploader-v0.1.0.
-# По тегу файлы прикрепляются к GitHub Release.
+# Запускается при изменениях загрузчика в main, вручную (Actions → «Сборка загрузчика» → Run workflow)
+# или тегом uploader-v0.1.0. Готовые файлы — в Artifacts запуска; по тегу ещё и в GitHub Release.
 name: Сборка загрузчика
 
 on:
   workflow_dispatch:
   push:
     tags: ["uploader-v*"]
+    branches: [main]
+    paths: ["uploader/**", ".github/workflows/uploader-release.yml"]
 
 permissions:
   contents: write
