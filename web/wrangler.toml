@@ -24,7 +24,6 @@ bucket_name = "video-archive-previews"
 
 [ai]
 binding = "AI"
-remote = true
 
 [vars]
 # Модель Workers AI для ИИ-тегов по умолчанию (vision, без принятия лицензии). Загрузчик может передать другую (только @cf/...).

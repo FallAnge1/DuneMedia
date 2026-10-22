@@ -137,6 +137,20 @@ describe("видео", () => {
     expect(video.updated_at).toBeGreaterThanOrEqual(created.video.updated_at);
   });
 
+  it("правки подписи без caption_synced помечают пост устаревшим", async () => {
+    const { video } = await json(await api("/api/videos", { method: "POST", token, json: videoPayload({ tags: ["a1"] }) }));
+    expect(video.caption_dirty).toBe(0);
+    const patch = (body: Record<string, unknown>) =>
+      api(`/api/videos/${video.id}`, { method: "PATCH", token, json: body }).then((r) => json(r));
+    expect((await patch({ collections: [] })).video.caption_dirty).toBe(0);
+    expect((await patch({ title: "С сайта" })).video.caption_dirty).toBe(1);
+    expect((await patch({ title: "Из программы", caption_synced: true })).video.caption_dirty).toBe(0);
+    const { tags } = await json(await api("/api/tags"));
+    const tagId = tags.find((t: { name: string }) => t.name === "a1").id;
+    await api(`/api/tags/${tagId}`, { method: "PATCH", token, json: { name: "a2" } });
+    expect((await json(await api(`/api/videos/${video.id}`))).video.caption_dirty).toBe(1);
+  });
+
   it("PATCH несуществующего видео — 404", async () => {
     const res = await api(`/api/videos/${crypto.randomUUID()}`, { method: "PATCH", token, json: { title: "x" } });
     expect(res.status).toBe(404);

@@ -34,11 +34,11 @@ async function videosWithTags(db: D1Database, tagIds: number[]): Promise<string[
   return results.map((r) => r.video_id);
 }
 
-/** Помечает видео изменёнными и пересобирает их строки поиска. */
+/** Помечает видео изменёнными (и подписи в Telegram устаревшими), пересобирает строки поиска. */
 function touchVideos(db: D1Database, ids: string[]): D1PreparedStatement[] {
   if (ids.length === 0) return [];
   return [
-    db.prepare("UPDATE videos SET updated_at = ? WHERE id IN (SELECT value FROM json_each(?))").bind(Date.now(), JSON.stringify(ids)),
+    db.prepare("UPDATE videos SET updated_at = ?, caption_dirty = 1 WHERE id IN (SELECT value FROM json_each(?))").bind(Date.now(), JSON.stringify(ids)),
     ...ftsSync(db, ids),
   ];
 }

@@ -20,3 +20,6 @@ uploader/dist/
 .DS_Store
 Thumbs.db
 *.log
+
+# Тестовые ролики seed-скрипта
+web/.seed-cache/

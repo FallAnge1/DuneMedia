@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Видеоархив команды: поиск, теги и коллекции. Видео хранятся в Telegram." />
+    <meta name="theme-color" content="#0f1012" />
+    <title>Видеоархив</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Библиотека грузится параллельно со скриптами -->
+    <link rel="preload" href="/api/library" as="fetch" crossorigin="anonymous" />
+    <script>
+      try {
+        var t = localStorage.getItem("va.theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Для работы видеоархива включите JavaScript.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

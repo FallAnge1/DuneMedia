@@ -19,6 +19,8 @@ export interface VideoRow {
   preview_key: string | null;
   poster_key: string | null;
   uploaded_by: string | null;
+  /** 1 — подпись поста в Telegram устарела (правки сделаны на сайте). */
+  caption_dirty: number;
   created_at: number;
   updated_at: number;
 }
@@ -30,7 +32,7 @@ export interface Video extends VideoRow {
 
 export const VIDEO_COLUMNS = `id, tg_channel, tg_message_id, title, description, file_name, file_size, file_hash,
   duration, width, height, orientation, resolution_label, fps, codec, preview_key, poster_key,
-  uploaded_by, created_at, updated_at`;
+  uploaded_by, caption_dirty, created_at, updated_at`;
 
 /** Увеличивает ревизию архива (ETag для /api/library). Добавляйте в каждый batch с изменениями. */
 export const bumpRev = (db: D1Database) =>

@@ -111,7 +111,7 @@ videoRoutes.post("/", async (c) => {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO videos (${VIDEO_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO videos (${VIDEO_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -132,6 +132,7 @@ videoRoutes.post("/", async (c) => {
         meta.preview_key ?? null,
         meta.poster_key ?? null,
         c.var.uploader.name,
+        0,
         createdAt,
         now,
       ),
@@ -143,7 +144,10 @@ videoRoutes.post("/", async (c) => {
   return c.json({ video: await loadVideo(db, id) }, 201);
 });
 
-/** PATCH /api/videos/:id — изменить метаданные; tags и collections заменяются целиком. */
+/**
+ * PATCH /api/videos/:id — изменить метаданные; tags и collections заменяются целиком.
+ * caption_synced: true — загрузчик уже обновил подпись поста в Telegram.
+ */
 videoRoutes.patch("/:id", async (c) => {
   const id = c.req.param("id").toLowerCase();
   const db = c.env.DB;
@@ -166,6 +170,10 @@ videoRoutes.patch("/:id", async (c) => {
     const height = (updates.height ?? current.height) as number | null;
     Object.assign(updates, derived(width, height));
   }
+  // Подпись поста в Telegram: загрузчик сам обновляет пост и передаёт caption_synced: true.
+  // Правки названия, описания или тегов без этого флага (например, с сайта) помечают подпись устаревшей.
+  if (body.caption_synced === true) updates.caption_dirty = 0;
+  else if (body.title !== undefined || body.description !== undefined || body.tags !== undefined) updates.caption_dirty = 1;
   updates.updated_at = Date.now();
 
   const statements: D1PreparedStatement[] = [];
