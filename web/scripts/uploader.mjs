@@ -9,9 +9,7 @@
 // По умолчанию работает с боевой базой (--remote). Для локальной разработки добавьте --local:
 //   npm run uploader:create -- "Тест" --local
 
-import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { wranglerArgs } from "./wrangler-path.mjs";
+import { createToken, d1 as runSql } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const command = args.shift();
@@ -20,12 +18,7 @@ const rest = args.filter((a) => a !== "--local" && a !== "--remote");
 
 const sql = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
-function d1(command) {
-  const [node, args] = wranglerArgs(["d1", "execute", "DB", local ? "--local" : "--remote", "--json", "--command", command]);
-  const out = execFileSync(node, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
-  const parsed = JSON.parse(out);
-  return parsed[0]?.results ?? [];
-}
+const d1 = (command) => runSql(command, { local });
 
 function fail(message) {
   console.error(`Ошибка: ${message}`);
@@ -38,12 +31,8 @@ try {
   if (command === "create") {
     const name = rest.join(" ").trim();
     if (!name) fail('укажите имя: npm run uploader:create -- "Имя"');
-    const token = `va_${randomBytes(32).toString("base64url")}`;
-    const hash = createHash("sha256").update(token).digest("hex");
-    const rows = d1(
-      `INSERT INTO uploaders (name, token_hash, created_at, revoked) VALUES (${sql(name)}, ${sql(hash)}, ${Date.now()}, 0) RETURNING id`,
-    );
-    console.log(`\nЗагрузчик «${name}» создан в ${where} (id ${rows[0]?.id}).`);
+    const { token, id } = createToken(name, { local });
+    console.log(`\nЗагрузчик «${name}» создан в ${where} (id ${id}).`);
     console.log("\nТокен (показывается ОДИН раз, сохраните его и передайте загрузчику):\n");
     console.log(`  ${token}\n`);
   } else if (command === "revoke") {
