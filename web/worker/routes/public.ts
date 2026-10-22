@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../types";
-import { attachRelations, getRev, loadVideo, VIDEO_COLUMNS, type VideoRow } from "../lib/db";
+import { getRev, loadVideo } from "../lib/db";
 import { notFound, ApiError } from "../lib/http";
 import { UUID_RE } from "../lib/normalize";
 
@@ -16,30 +16,57 @@ const COLLECTIONS_WITH_COUNTS = `SELECT c.id, c.name, c.emoji, c.sort_order, cou
 
 const LIBRARY_PREFIX = "_cache/library-";
 
-/** Собирает полный JSON библиотеки из D1 одной транзакцией (batch). */
+// JSON каждого видео собирает сама D1 (SQLite json_*): на бесплатном тарифе у Worker'а 10 мс CPU
+// на запрос, а JSON.stringify архива на 10+ тысяч видео в него не укладывается. Время D1 в лимит не входит.
+const VIDEO_JSON = `json_object(
+  'id', v.id, 'tg_channel', v.tg_channel, 'tg_message_id', v.tg_message_id, 'title', v.title,
+  'description', v.description, 'file_name', v.file_name, 'file_size', v.file_size, 'duration', v.duration,
+  'width', v.width, 'height', v.height, 'orientation', v.orientation, 'resolution_label', v.resolution_label,
+  'fps', v.fps, 'codec', v.codec, 'preview_key', v.preview_key, 'poster_key', v.poster_key,
+  'uploaded_by', v.uploaded_by, 'caption_dirty', v.caption_dirty, 'created_at', v.created_at, 'updated_at', v.updated_at,
+  'tags', json((SELECT json_group_array(name) FROM (
+    SELECT t.name FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE vt.video_id = v.id ORDER BY t.name))),
+  'collections', json((SELECT json_group_array(collection_id) FROM video_collections WHERE video_id = v.id))
+)`;
+
+// Куски по диапазонам rowid: одно значение в D1 — не больше 2 МБ.
+const CHUNK_ROWS = 1500;
+
+/** Собирает полный JSON библиотеки. Порядок видео не важен: сайт сортирует сам. */
 async function buildLibrary(db: D1Database): Promise<{ rev: number; json: string }> {
-  const [rev, videos, tagLinks, colLinks, tags, collections] = await db.batch([
-    db.prepare("SELECT CAST(value AS INTEGER) AS rev FROM meta WHERE key = 'library_rev'"),
-    db.prepare(`SELECT ${VIDEO_COLUMNS} FROM videos ORDER BY created_at DESC`),
-    db.prepare("SELECT vt.video_id, t.name FROM video_tags vt JOIN tags t ON t.id = vt.tag_id ORDER BY t.name"),
-    db.prepare("SELECT video_id, collection_id FROM video_collections"),
-    db.prepare(TAGS_WITH_COUNTS),
-    db.prepare(COLLECTIONS_WITH_COUNTS),
-  ]);
-  const revNum = Number((rev!.results[0] as { rev: number } | undefined)?.rev ?? 0);
-  const list = attachRelations(
-    videos!.results as unknown as VideoRow[],
-    tagLinks!.results as unknown as { video_id: string; name: string }[],
-    colLinks!.results as unknown as { video_id: string; collection_id: number }[],
-  ).map(({ file_hash: _hash, ...v }) => v);
-  const json = JSON.stringify({
-    rev: revNum,
-    generated_at: Date.now(),
-    videos: list,
-    tags: tags!.results,
-    collections: collections!.results,
-  });
-  return { rev: revNum, json };
+  const head = await db
+    .prepare(
+      `SELECT (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'library_rev') AS rev,
+              min(rowid) AS lo, max(rowid) AS hi FROM videos`,
+    )
+    .first<{ rev: number; lo: number | null; hi: number | null }>();
+  const rev = Number(head?.rev ?? 0);
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`SELECT json_group_array(json_object('id', id, 'name', name, 'count', count)) AS j FROM (${TAGS_WITH_COUNTS})`),
+    db.prepare(
+      `SELECT json_group_array(json_object('id', id, 'name', name, 'emoji', emoji, 'sort_order', sort_order, 'count', count)) AS j
+       FROM (${COLLECTIONS_WITH_COUNTS})`,
+    ),
+  ];
+  if (head?.lo != null && head.hi != null) {
+    for (let from = head.lo; from <= head.hi; from += CHUNK_ROWS) {
+      statements.push(
+        db
+          .prepare(`SELECT json_group_array(${VIDEO_JSON}) AS j FROM videos v WHERE v.rowid BETWEEN ? AND ?`)
+          .bind(from, from + CHUNK_ROWS - 1),
+      );
+    }
+  }
+  const results = await db.batch<{ j: string }>(statements);
+  const value = (i: number) => results[i]!.results[0]?.j ?? "[]";
+  // Склеиваем массивы кусков без разбора JSON: «[a,b]» + «[c]» → «[a,b,c]».
+  const parts: string[] = [];
+  for (let i = 2; i < results.length; i++) {
+    const inner = value(i).slice(1, -1);
+    if (inner) parts.push(inner);
+  }
+  const json = `{"rev":${rev},"generated_at":${Date.now()},"videos":[${parts.join(",")}],"tags":${value(0)},"collections":${value(1)}}`;
+  return { rev, json };
 }
 
 /**

@@ -50,6 +50,9 @@ class Config:
     # Сайт
     site_url: str = ""
     uploader_token: str = ""
+    # Если сайт закрыт через Cloudflare Access — сервисный токен (см. docs/08-cloudflare-access.md).
+    access_client_id: str = ""
+    access_client_secret: str = ""
     # ИИ
     ai_enabled: bool = True
     ai_auto: bool = False  # предлагать теги автоматически при добавлении файла
@@ -101,6 +104,11 @@ class Config:
 
     def save(self) -> None:
         write_json_atomic(self.path(), asdict(self))
+
+    def access_headers(self) -> dict[str, str]:
+        if self.access_client_id and self.access_client_secret:
+            return {"CF-Access-Client-Id": self.access_client_id, "CF-Access-Client-Secret": self.access_client_secret}
+        return {}
 
     def provider(self, provider_id: str) -> AIProviderConfig | None:
         return next((p for p in self.ai_providers if p.id == provider_id), None)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import httpx
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -163,17 +162,17 @@ class VideoEditDialog(QDialog):
 
     def _load_poster(self) -> None:
         key = self.video.get("poster_key")
-        if not key or not self.ctx.config.site_url:
+        api = self.ctx.api
+        if not key or not api:
             self.poster.setText("нет постера")
             return
-        url = f"{self.ctx.config.site_url.rstrip('/')}/media/{key}"
 
         def done(data: bytes) -> None:
             pm = QPixmap()
             if pm.loadFromData(data):
                 self.poster.setPixmap(pm.scaled(self.poster.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-        run_async(lambda: httpx.get(url, timeout=20).content, done, lambda _e: self.poster.setText("нет постера"))
+        run_async(lambda: api.get_bytes(f"/media/{key}"), done, lambda _e: self.poster.setText("нет постера"))
 
     def save(self) -> None:
         title = self.title.text().strip()

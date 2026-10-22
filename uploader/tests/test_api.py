@@ -94,3 +94,16 @@ def test_telegram_error_translation():
     assert translate(errors.FloodWaitError(request=None, capture=42)).seconds == 42
     assert isinstance(translate(ConnectionError()), TelegramConnectionError)
     assert "Неверный код" in str(translate(errors.PhoneCodeInvalidError(request=None)))
+
+
+def test_access_and_wrong_address():
+    def handler(req):
+        if req.url.path == "/api/me":
+            return httpx.Response(302, headers={"location": "https://team.cloudflareaccess.com/cdn-cgi/access/login"})
+        return httpx.Response(200, text="<html>не тот сайт</html>")
+
+    c = client(handler)
+    with pytest.raises(ApiError, match="Cloudflare Access"):
+        c.me()
+    with pytest.raises(ApiError, match="не сайт видеоархива"):
+        c.tags()

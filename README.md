@@ -8,8 +8,10 @@ Telegram-канале, сайт показывает их плиткой с пр
 |---|---|---|
 | Бэкенд: Cloudflare Worker + D1 + R2 + Workers AI | `web/worker`, `web/migrations` | ✅ этап 1 |
 | Сайт: Vite + React + TypeScript | `web/src` | ✅ этап 2 |
-| Программа-загрузчик: Python + PySide6 + Telethon | `uploader/` | этапы 3–4 |
-| Инструкции | `docs/` | этап 5 |
+| Программа-загрузчик: Python + PySide6 + Telethon | `uploader/` | ✅ этапы 3–4 |
+| Сборка (Windows, macOS) и инструкции | `uploader/build/`, `.github/workflows/`, `docs/` | ✅ этап 5 |
+
+**Начать:** [docs/README.md](docs/README.md) — пошаговая настройка канала, сайта и программы.
 
 ## Сайт
 
@@ -54,6 +56,12 @@ npm run seed                  # в другом терминале: 50 тест�
 - Токен для локальной разработки: `npm run uploader:create -- "Я" --local`.
 
 Описание API: [docs/api.md](docs/api.md).
+
+## Программа-загрузчик
+
+Установщики для Windows и macOS собираются в GitHub Actions (**Actions → «Сборка загрузчика»** или тег
+`uploader-v0.1.0`) — см. [docs/06-uploader-install.md](docs/06-uploader-install.md).
+Запуск из исходников и устройство — [uploader/README.md](uploader/README.md).
 
 ## Как устроено
 

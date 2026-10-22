@@ -69,7 +69,8 @@ class AppContext(QObject):
         """После изменения настроек: пересоздаём клиентов и конвейер."""
         self.config.save()
         # Старый клиент не закрываем: им может пользоваться идущая загрузка.
-        self.api = ApiClient(self.config.site_url, self.config.uploader_token) if self.config.site_ready else None
+        self.api = (ApiClient(self.config.site_url, self.config.uploader_token, extra_headers=self.config.access_headers())
+                    if self.config.site_ready else None)
         self.manager.set_pipeline(self._make_pipeline())
 
     def ensure_telegram(self) -> TelegramService:

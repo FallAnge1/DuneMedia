@@ -301,6 +301,13 @@ class SitePage(QWizardPage):
             w.textEdited.connect(self._changed)
         form.addRow("Адрес сайта", self.url)
         form.addRow("Токен", self.token)
+        self.access_id = QLineEdit(ctx.config.access_client_id)
+        self.access_id.setPlaceholderText("только если сайт закрыт через Cloudflare Access")
+        self.access_secret = QLineEdit(ctx.config.access_client_secret)
+        self.access_secret.setEchoMode(QLineEdit.EchoMode.Password)
+        self.access_secret.setPlaceholderText("необязательно")
+        form.addRow("Access Client ID", self.access_id)
+        form.addRow("Access Client Secret", self.access_secret)
         layout.addLayout(form)
         check = QPushButton("Проверить связь")
         check.clicked.connect(self.check)
@@ -327,6 +334,8 @@ class SitePage(QWizardPage):
         if url and not url.startswith("http"):
             url = "https://" + url
         token = self.token.text().strip()
+        access_id, access_secret = self.access_id.text().strip(), self.access_secret.text().strip()
+        headers = {"CF-Access-Client-Id": access_id, "CF-Access-Client-Secret": access_secret} if access_id and access_secret else {}
         if not url or not token:
             set_status(self.status, "Укажите адрес и токен.", False)
             return
@@ -335,12 +344,14 @@ class SitePage(QWizardPage):
         def done(me: dict) -> None:
             self.ok = True
             self.ctx.config.site_url, self.ctx.config.uploader_token = url, token
+            self.ctx.config.access_client_id, self.ctx.config.access_client_secret = access_id, access_secret
             self.url.setText(url)
             self.ctx.config.save()
             set_status(self.status, f"Связь есть. Вы загружаете как «{me['name']}».", True)
             self.completeChanged.emit()
 
-        run_async(lambda: ApiClient(url, token, retries=1).me(), done, lambda e: set_status(self.status, str(e), False))
+        run_async(lambda: ApiClient(url, token, retries=1, extra_headers=headers).me(), done,
+                  lambda e: set_status(self.status, str(e), False))
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +438,8 @@ class AIPage(QWizardPage):
         self._collect()
         from videoarchive.ai.providers import ProviderError, build_provider
 
-        api = ApiClient(self.ctx.config.site_url, self.ctx.config.uploader_token, retries=1) if self.ctx.config.site_ready else None
+        api = (ApiClient(self.ctx.config.site_url, self.ctx.config.uploader_token, retries=1,
+                         extra_headers=self.ctx.config.access_headers()) if self.ctx.config.site_ready else None)
         providers = [build_provider(p, api) for p in self.ctx.config.ai_providers if p.enabled]
 
         def go() -> list[str]:

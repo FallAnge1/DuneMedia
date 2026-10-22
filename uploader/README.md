@@ -53,3 +53,19 @@ videoarchive/
 # связка с локальным сайтом (в web/: npm run dev):
 VIDEOARCHIVE_TEST_SITE=http://localhost:8787 VIDEOARCHIVE_TEST_TOKEN=va_... .venv/bin/python -m pytest tests/test_integration.py
 ```
+
+## Сборка установщиков
+
+Обычно собирает GitHub Actions (`.github/workflows/uploader-release.yml`): Windows (установщик + portable .exe)
+и macOS (.dmg для Apple Silicon и Intel), с самопроверкой каждой сборки.
+
+Вручную на своей системе:
+
+```bash
+pip install -r requirements-dev.txt pillow
+python build/get_ffmpeg.py              # статический ffmpeg в uploader/ffmpeg/
+pyinstaller --noconfirm build/videoarchive.spec
+dist/VideoArchive --selftest            # macOS: dist/VideoArchive.app/Contents/MacOS/VideoArchive --selftest
+```
+
+Иконка: `build/make_icon.py` (PNG) и `build/make_ico.py` (ICO для установщика) — результаты уже лежат в `assets/`.

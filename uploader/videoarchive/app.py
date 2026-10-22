@@ -51,7 +51,69 @@ def install_excepthook() -> None:
     sys.excepthook = hook
 
 
+def selftest() -> int:
+    """Проверка собранной программы (для CI): ffmpeg с H.264, Telethon, cryptg, Qt. Код возврата 0 — всё хорошо."""
+    import importlib
+    import tempfile
+    from pathlib import Path
+
+    from videoarchive.core import media
+
+    report: list[str] = []
+    ok = True
+
+    def check(name: str, fn) -> None:
+        nonlocal ok
+        try:
+            report.append(f"OK   {name}: {fn()}")
+        except Exception as err:  # noqa: BLE001
+            ok = False
+            report.append(f"FAIL {name}: {err}")
+
+    check("ffmpeg", lambda: find_tool("ffmpeg") or (_ for _ in ()).throw(RuntimeError("не найден")))
+    check("ffprobe", lambda: find_tool("ffprobe") or (_ for _ in ()).throw(RuntimeError("не найден")))
+
+    def video_pipeline() -> str:
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "test.mp4"
+            kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}  # type: ignore[attr-defined]
+            subprocess.run([find_tool("ffmpeg"), "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=25",
+                            "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True, capture_output=True, **kwargs)
+            info = media.probe(src)
+            preview = media.make_preview(src, Path(tmp) / "p.mp4", info)
+            poster = media.make_poster(src, Path(tmp) / "p.jpg", info)
+            return f"{info.width}x{info.height} {info.resolution_label}, превью {preview.stat().st_size // 1024} КБ, постер {poster.stat().st_size // 1024} КБ"
+
+    check("превью и постер (libx264)", video_pipeline)
+    check("telethon", lambda: importlib.import_module("telethon").__version__)
+    check("cryptg", lambda: importlib.import_module("cryptg").__name__)
+
+    def qt() -> str:
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6 import __version__ as pyside_version
+        from PySide6.QtWidgets import QApplication, QLabel
+
+        app = QApplication.instance() or QApplication([])
+        QLabel("тест").grab()
+        return f"PySide6 {pyside_version}, платформа {app.platformName()}"
+
+    check("Qt", qt)
+    text = "\n".join(report) + ("\nSELFTEST OK\n" if ok else "\nSELFTEST FAILED\n")
+    out = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--selftest-report=")), None)
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+    if sys.stdout:
+        print(text)
+    return 0 if ok else 1
+
+
 def main() -> None:
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
     setup_logging(verbose="--verbose" in sys.argv)
     log.info("Запуск %s %s, Python %s", APP_NAME, __version__, sys.version.split()[0])
     install_excepthook()

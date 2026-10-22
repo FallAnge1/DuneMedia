@@ -1,0 +1,95 @@
+# Сборка программы-загрузчика для Windows и macOS.
+# Запускается вручную (Actions → «Сборка загрузчика» → Run workflow) или тегом uploader-v0.1.0.
+# По тегу файлы прикрепляются к GitHub Release.
+name: Сборка загрузчика
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["uploader-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, platform: win64, optional: false }
+          - { name: macOS (Apple Silicon), os: macos-latest, platform: mac-arm64, optional: false }
+          - { name: macOS (Intel), os: macos-15-intel, platform: mac-x64, optional: true }
+    defaults:
+      run:
+        working-directory: uploader
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: uploader/requirements-dev.txt
+
+      - name: Зависимости
+        run: pip install -r requirements-dev.txt pillow
+
+      - name: Версия
+        id: ver
+        run: echo "version=$(python -c 'import videoarchive; print(videoarchive.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: ffmpeg
+        run: python build/get_ffmpeg.py --platform ${{ matrix.platform }}
+
+      - name: Сборка (один файл / .app)
+        run: pyinstaller --noconfirm --clean build/videoarchive.spec
+
+      # ---------- Windows ----------
+      - name: Самопроверка (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\VideoArchive.exe -ArgumentList "--selftest","--selftest-report=selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Установщик (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Rename-Item dist\VideoArchive.exe VideoArchive-portable.exe
+          $env:VA_ONEDIR = "1"
+          pyinstaller --noconfirm build/videoarchive.spec
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.version }}" build\installer.iss
+          Move-Item dist\VideoArchive-portable.exe "dist\VideoArchive-${{ steps.ver.outputs.version }}-windows-portable.exe"
+
+      # ---------- macOS ----------
+      - name: Самопроверка и .dmg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          dist/VideoArchive.app/Contents/MacOS/VideoArchive --selftest --selftest-report=selftest.txt || { cat selftest.txt; exit 1; }
+          cat selftest.txt
+          # Подпись «ad-hoc»: без платного сертификата Apple, но приложение запускается на Apple Silicon.
+          codesign --force --deep --sign - dist/VideoArchive.app
+          hdiutil create -volname "Видеоархив" -srcfolder dist/VideoArchive.app -ov -format UDZO \
+            "dist/VideoArchive-${{ steps.ver.outputs.version }}-${{ matrix.platform }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoArchive-${{ matrix.platform }}
+          path: |
+            uploader/dist/*.exe
+            uploader/dist/*.dmg
+          if-no-files-found: error
+
+      - name: Релиз
+        if: startsWith(github.ref, 'refs/tags/uploader-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            uploader/dist/*.exe
+            uploader/dist/*.dmg

@@ -23,16 +23,17 @@ class ApiError(Exception):
 
 
 class ApiClient:
-    def __init__(self, base_url: str, token: str, *, retries: int = 5, timeout: float = 60, transport: httpx.BaseTransport | None = None):
+    def __init__(self, base_url: str, token: str, *, retries: int = 5, timeout: float = 60,
+                 transport: httpx.BaseTransport | None = None, extra_headers: dict[str, str] | None = None):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.retries = retries
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=15),
-            headers={"Authorization": f"Bearer {token}", "User-Agent": f"VideoArchiveUploader/{__version__}"},
+            headers={"Authorization": f"Bearer {token}", "User-Agent": f"VideoArchiveUploader/{__version__}", **(extra_headers or {})},
             transport=transport,
-            follow_redirects=True,
+            follow_redirects=False,  # переадресация = Cloudflare Access или неверный адрес — сообщим понятно
         )
 
     def close(self) -> None:
@@ -63,16 +64,35 @@ class ApiClient:
             return self._parse(res)
         raise AssertionError("unreachable")
 
+    def get_bytes(self, path: str) -> bytes:
+        """Файл с сайта (постер для окна редактирования)."""
+        try:
+            res = self._client.get(path)
+        except httpx.TransportError as err:
+            raise ApiError(0, "network", "Нет связи с сайтом") from err
+        if res.status_code >= 400:
+            raise ApiError(res.status_code, "http", f"Сайт вернул ошибку {res.status_code}")
+        return res.content
+
     @staticmethod
     def _parse(res: httpx.Response) -> Any:
+        if 300 <= res.status_code < 400:
+            location = res.headers.get("location", "")
+            if "cloudflareaccess" in location:
+                raise ApiError(res.status_code, "access", "Сайт закрыт через Cloudflare Access. Укажите сервисный токен Access в настройках.")
+            raise ApiError(res.status_code, "redirect", f"Сайт перенаправляет на {location}. Проверьте адрес (https://, без лишнего пути).")
         try:
             data = res.json()
         except ValueError:
             data = None
+        if res.status_code < 400 and data is None:
+            raise ApiError(res.status_code, "not_json", "По этому адресу не сайт видеоархива (ответ не JSON). Проверьте адрес.")
         if res.status_code >= 400:
             err = (data or {}).get("error") or {}
             message = err.get("message") or f"Сайт вернул ошибку {res.status_code}"
-            if res.status_code == 401:
+            if res.status_code in (302, 401, 403) and "cloudflareaccess" in str(res.headers.get("location", "")) + res.text[:2000]:
+                message = "Сайт закрыт через Cloudflare Access. Укажите сервисный токен Access в настройках."
+            elif res.status_code == 401:
                 message = "Сайт не принял токен загрузчика. Проверьте токен в настройках."
             elif res.status_code == 403:
                 message = "Токен загрузчика отозван. Попросите у администратора новый."

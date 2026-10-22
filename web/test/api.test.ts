@@ -234,6 +234,35 @@ describe("библиотека", () => {
     await third.text();
   });
 
+  it("большой архив собирается кусками и целиком", async () => {
+    const { tags: [tag] } = await json(await api("/api/tags"));
+    const now = Date.now();
+    const statements = [];
+    for (let i = 0; i < 3200; i++) {
+      const id = crypto.randomUUID();
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO videos (id, tg_channel, tg_message_id, title, created_at, updated_at, duration, caption_dirty)
+           VALUES (?, 'bulk_channel', ?, ?, ?, ?, 1.5, 0)`,
+        ).bind(id, 500_000 + i, `Массовое ${i}`, now, now),
+      );
+      if (i % 2 === 0) statements.push(env.DB.prepare("INSERT INTO video_tags (video_id, tag_id) VALUES (?, ?)").bind(id, tag.id));
+    }
+    statements.push(env.DB.prepare("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'library_rev'"));
+    for (let i = 0; i < statements.length; i += 500) await env.DB.batch(statements.slice(i, i + 500));
+
+    const lib = await json(await api("/api/library"));
+    const bulk = lib.videos.filter((v: { tg_channel: string }) => v.tg_channel === "bulk_channel");
+    expect(bulk).toHaveLength(3200);
+    expect(new Set(lib.videos.map((v: { id: string }) => v.id)).size).toBe(lib.videos.length);
+    expect(bulk.filter((v: { tags: string[] }) => v.tags.length === 1)).toHaveLength(1600);
+    expect(Array.isArray(bulk[0].collections)).toBe(true);
+    expect(bulk[0].duration).toBe(1.5);
+    await env.DB.prepare("DELETE FROM video_tags WHERE video_id IN (SELECT id FROM videos WHERE tg_channel = 'bulk_channel')").run();
+    await env.DB.prepare("DELETE FROM videos WHERE tg_channel = 'bulk_channel'").run();
+    await env.DB.prepare("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'library_rev'").run();
+  });
+
   it("удаление видео тоже меняет ETag", async () => {
     const { video } = await json(await api("/api/videos", { method: "POST", token, json: videoPayload() }));
     const before = (await api("/api/library")).headers.get("ETag");

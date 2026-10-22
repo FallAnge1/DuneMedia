@@ -5,7 +5,6 @@ web/.wrangler/
 __pycache__/
 *.pyc
 .venv/
-uploader/build/
 uploader/dist/
 
 # Секреты и локальные настройки
@@ -23,3 +22,7 @@ Thumbs.db
 
 # Тестовые ролики seed-скрипта
 web/.seed-cache/
+
+# Сборка загрузчика
+uploader/ffmpeg/
+uploader/build/work/
