@@ -13,6 +13,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # Русский текст в выводе скриптов: без этого Python на Windows пишет в cp1252 и падает.
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
 jobs:
   build:
     name: ${{ matrix.name }}

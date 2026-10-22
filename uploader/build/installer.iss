@@ -1,4 +1,4 @@
-; Установщик для Windows (Inno Setup 6). Собирается в CI:
+﻿; Установщик для Windows (Inno Setup 6). Собирается в CI:
 ;   iscc /DAppVersion=0.1.0 build\installer.iss
 ; Ставится в папку пользователя без прав администратора. Данные программы (%APPDATA%\VideoArchive)
 ; при удалении не трогаются: настройки и вход в Telegram сохранятся при переустановке.
