@@ -104,6 +104,24 @@ jobs:
             uploader/dist/*.dmg
           if-no-files-found: error
 
+      # Те же файлы под постоянными именами — для релиза uploader-latest, из которого качают установщики-приглашения.
+      - name: Постоянные имена
+        run: |
+          mkdir -p dist/stable
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp dist/VideoArchive-Setup-*.exe dist/stable/VideoArchive-Setup.exe
+            cp dist/*-windows-portable.exe dist/stable/VideoArchive-windows-portable.exe
+          else
+            cp dist/*-${{ matrix.platform }}.dmg dist/stable/VideoArchive-${{ matrix.platform }}.dmg
+          fi
+          ls -la dist/stable
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-${{ matrix.platform }}
+          path: uploader/dist/stable/*
+          if-no-files-found: error
+
       - name: Релиз
         if: startsWith(github.ref, 'refs/tags/uploader-v')
         uses: softprops/action-gh-release@v2
@@ -111,3 +129,88 @@ jobs:
           files: |
             uploader/dist/*.exe
             uploader/dist/*.dmg
+
+  # Один релиз «uploader-latest» на все системы: файлы с постоянными именами всегда указывают на свежую сборку.
+  publish:
+    name: Релиз uploader-latest
+    needs: build
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: stable-*
+          merge-multiple: true
+          path: release
+      - run: ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: uploader-latest
+          target_commitish: ${{ github.sha }}
+          name: Программа-загрузчик — последняя сборка
+          make_latest: true
+          overwrite_files: true
+          body: |
+            Свежая сборка программы-загрузчика видеоархива (обновляется автоматически).
+
+            - **Windows 10/11:** `VideoArchive-Setup.exe` — установщик, `VideoArchive-windows-portable.exe` — без установки.
+            - **Mac на Apple M1–M4:** `VideoArchive-mac-arm64.dmg`, **Mac на Intel:** `VideoArchive-mac-x64.dmg`.
+
+            Проще всего — приглашение: администратор запускает `invite.bat` / `invite.command` в корне проекта
+            и отправляет человеку папку с установщиками (см. docs/00-quickstart.md).
+          files: release/*
+
+  # Проверка установщиков-приглашений на настоящих Windows и Mac.
+  test-install:
+    name: Установка по приглашению (${{ matrix.os }})
+    needs: publish
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      VA_NO_LAUNCH: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Файлы приглашения
+        shell: bash
+        run: |
+          CODE=$(node -e 'console.log(Buffer.from(JSON.stringify({v:1,name:"Проверка CI",site_url:"https://example.com",uploader_token:"va_ci_test",channel:"ci_channel",repo:process.env.GITHUB_REPOSITORY,api_id:12345,api_hash:"abc"})).toString("base64url"))')
+          node web/scripts/invite-files.mjs "$RUNNER_TEMP/invite" "$CODE"
+          ls -la "$RUNNER_TEMP/invite"
+
+      - name: Установка (Windows, двойной щелчок по .bat)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bat = Join-Path $env:RUNNER_TEMP 'invite\Установить (Windows).bat'
+          # «< NUL» — чтобы pause в конце батника не ждал нажатия клавиши.
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', "`"$bat`" < NUL" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Установщик вернул $($p.ExitCode)" }
+          $cfg = Get-Content -Raw -Encoding UTF8 (Join-Path $env:APPDATA 'VideoArchive\config.json') | ConvertFrom-Json
+          if ($cfg.site_url -ne 'https://example.com' -or $cfg.uploader_token -ne 'va_ci_test' -or $cfg.api_id -ne 12345) { throw "Настройки не записаны: $($cfg | ConvertTo-Json)" }
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $env:APPDATA 'VideoArchive\config.json'))
+          if ($bytes[0] -eq 0xEF) { throw 'config.json записан с BOM' }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\VideoArchive\VideoArchive.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--selftest','--selftest-report=selftest.txt' -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw 'Самопроверка установленной программы не прошла' }
+
+      - name: Установка (Mac, .command)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bash "$RUNNER_TEMP/invite/Установить (Mac).command"
+          APP=/Applications/VideoArchive.app; [ -d "$APP" ] || APP="$HOME/Applications/VideoArchive.app"
+          test -d "$APP"
+          CFG="$HOME/Library/Application Support/VideoArchive/config.json"
+          cat "$CFG"
+          grep -q '"site_url": "https://example.com"' "$CFG"
+          grep -q '"uploader_token": "va_ci_test"' "$CFG"
+          grep -q '"api_id": 12345' "$CFG"
+          "$APP/Contents/MacOS/VideoArchive" --selftest --selftest-report=selftest.txt || { cat selftest.txt; exit 1; }
+          cat selftest.txt

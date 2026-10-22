@@ -26,3 +26,7 @@ web/.seed-cache/
 # Сборка загрузчика
 uploader/ffmpeg/
 uploader/build/work/
+
+# Приглашения загрузчиков (содержат токены) и настройки администратора
+invites/
+web/.admin.json

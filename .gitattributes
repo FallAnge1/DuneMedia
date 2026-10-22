@@ -1,0 +1,4 @@
+# Батники должны остаться с переводами строк Windows, скрипты Mac/Linux — с Unix
+*.bat -text
+*.command text eol=lf
+*.sh text eol=lf
