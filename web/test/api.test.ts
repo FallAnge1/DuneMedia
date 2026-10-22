@@ -402,6 +402,59 @@ describe("коллекции", () => {
   });
 });
 
+describe("обложки досок", () => {
+  const png = () => {
+    const b = new Uint8Array(500);
+    b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    return b;
+  };
+
+  it("загрузка картинки, установка, замена и удаление обложки", async () => {
+    // картинка-обложка: png и jpg
+    expect((await api("/api/media/covers/c1-aaa.png", { method: "PUT", token, body: png() })).status).toBe(201);
+    expect((await api("/api/media/covers/c1-bbb.jpg", { method: "PUT", token, body: fakeJpeg() })).status).toBe(201);
+    expect((await api("/api/media/covers/bad.png", { method: "PUT", token, body: fakeJpeg() })).status).toBe(400);
+    const got = await api("/media/covers/c1-aaa.png");
+    expect(got.headers.get("Content-Type")).toBe("image/png");
+    await got.arrayBuffer();
+
+    const { collection } = await json(
+      await api("/api/collections", { method: "POST", token, json: { name: "С обложкой", cover_key: "covers/c1-aaa.png" } }),
+    );
+    expect(collection.cover_key).toBe("covers/c1-aaa.png");
+
+    // обложка видна в библиотеке и в списке досок
+    const lib = await json(await api("/api/library"));
+    expect(lib.collections.find((c: { id: number }) => c.id === collection.id).cover_key).toBe("covers/c1-aaa.png");
+    const { collections } = await json(await api("/api/collections"));
+    expect(collections.find((c: { id: number }) => c.id === collection.id).cover_key).toBe("covers/c1-aaa.png");
+
+    // занятую обложку удалить нельзя
+    expect((await api("/api/media/covers/c1-aaa.png", { method: "DELETE", token })).status).toBe(409);
+
+    // замена — старая картинка удаляется из R2
+    const patched = await json(
+      await api(`/api/collections/${collection.id}`, { method: "PATCH", token, json: { cover_key: "covers/c1-bbb.jpg" } }),
+    );
+    expect(patched.collection.cover_key).toBe("covers/c1-bbb.jpg");
+    await vi.waitFor(async () => expect(await env.PREVIEWS.head("covers/c1-aaa.png")).toBeNull());
+
+    // только covers/…: постер видео обложкой доски не назначить
+    const wrong = await api(`/api/collections/${collection.id}`, { method: "PATCH", token, json: { cover_key: "posters/x.jpg" } });
+    expect(wrong.status).toBe(400);
+
+    // сброс обложки (null) — снова авто-обложка из видео
+    await api(`/api/collections/${collection.id}`, { method: "PATCH", token, json: { cover_key: null } });
+    await vi.waitFor(async () => expect(await env.PREVIEWS.head("covers/c1-bbb.jpg")).toBeNull());
+
+    // удаление доски удаляет и её обложку
+    await api("/api/media/covers/c1-ccc.webp", { method: "PUT", token, body: new TextEncoder().encode("RIFF0000WEBPVP8 data") });
+    await api(`/api/collections/${collection.id}`, { method: "PATCH", token, json: { cover_key: "covers/c1-ccc.webp" } });
+    await api(`/api/collections/${collection.id}`, { method: "DELETE", token });
+    expect(await env.PREVIEWS.head("covers/c1-ccc.webp")).toBeNull();
+  });
+});
+
 describe("медиа (R2)", () => {
   it("загрузка и отдача постера", async () => {
     const bytes = fakeJpeg(3000);

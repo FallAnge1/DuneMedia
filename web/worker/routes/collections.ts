@@ -3,7 +3,7 @@ import type { AppEnv } from "../types";
 import { requireUploader } from "../lib/auth";
 import { bumpRev } from "../lib/db";
 import { ApiError, badRequest, notFound, readJsonObject } from "../lib/http";
-import { idList, optNumber, optString, stringIdList } from "../lib/normalize";
+import { COVER_KEY_RE, idList, optMediaKey, optNumber, optString, stringIdList } from "../lib/normalize";
 
 /** Управление коллекциями (только для загрузчиков). Публичный список — GET /api/collections. */
 export const collectionRoutes = new Hono<AppEnv>();
@@ -14,6 +14,23 @@ interface CollectionRow {
   name: string;
   sort_order: number;
   emoji: string | null;
+  cover_key: string | null;
+}
+
+const COLS = "id, name, sort_order, emoji, cover_key";
+
+/** Своя обложка доски: только ключ covers/… (картинку сначала загружают через PUT /api/media/covers/…). */
+function readCover(body: Record<string, unknown>): string | null | undefined {
+  const key = optMediaKey(body, "cover_key");
+  if (key && !COVER_KEY_RE.test(key)) throw badRequest("Обложка доски должна быть картинкой covers/<имя>.jpg|png|webp");
+  return key;
+}
+
+/** Старую обложку удаляем из R2, если она больше нигде не используется. */
+async function dropCover(env: Env, key: string | null | undefined): Promise<void> {
+  if (!key) return;
+  const used = await env.DB.prepare("SELECT 1 FROM collections WHERE cover_key = ? LIMIT 1").bind(key).first();
+  if (!used) await env.PREVIEWS.delete(key);
 }
 
 function parseId(raw: string): number {
@@ -23,7 +40,7 @@ function parseId(raw: string): number {
 }
 
 async function getCollection(db: D1Database, id: number): Promise<CollectionRow> {
-  const row = await db.prepare("SELECT id, name, sort_order, emoji FROM collections WHERE id = ?").bind(id).first<CollectionRow>();
+  const row = await db.prepare(`SELECT ${COLS} FROM collections WHERE id = ?`).bind(id).first<CollectionRow>();
   if (!row) throw notFound("Коллекция не найдена");
   return row;
 }
@@ -40,6 +57,7 @@ collectionRoutes.post("/", async (c) => {
   const name = optString(body, "name", 100);
   if (!name) throw badRequest("Название коллекции обязательно");
   const emoji = readEmoji(body) ?? null;
+  const cover = readCover(body) ?? null;
   const db = c.env.DB;
   if (await db.prepare("SELECT 1 FROM collections WHERE name = ?").bind(name).first()) throw nameTaken(name);
   let sortOrder = optNumber(body, "sort_order", { int: true });
@@ -49,8 +67,8 @@ collectionRoutes.post("/", async (c) => {
   }
   const [inserted] = await db.batch([
     db
-      .prepare("INSERT INTO collections (name, sort_order, emoji) VALUES (?, ?, ?) RETURNING id, name, sort_order, emoji")
-      .bind(name, sortOrder, emoji),
+      .prepare(`INSERT INTO collections (name, sort_order, emoji, cover_key) VALUES (?, ?, ?, ?) RETURNING ${COLS}`)
+      .bind(name, sortOrder, emoji, cover),
     bumpRev(db),
   ]);
   return c.json({ collection: inserted!.results[0] }, 201);
@@ -64,7 +82,7 @@ collectionRoutes.put("/order", async (c) => {
     ...ids.map((id, index) => db.prepare("UPDATE collections SET sort_order = ? WHERE id = ?").bind(index + 1, id)),
     bumpRev(db),
   ]);
-  const { results } = await db.prepare("SELECT id, name, sort_order, emoji FROM collections ORDER BY sort_order, name").all();
+  const { results } = await db.prepare(`SELECT ${COLS} FROM collections ORDER BY sort_order, name`).all();
   return c.json({ collections: results });
 });
 
@@ -76,6 +94,7 @@ collectionRoutes.patch("/:id{[0-9]+}", async (c) => {
   const name = optString(body, "name", 100);
   if (body.name !== undefined && !name) throw badRequest("Название коллекции не может быть пустым");
   const emoji = readEmoji(body);
+  const cover = readCover(body);
   const sortOrder = optNumber(body, "sort_order", { int: true });
   if (name && name !== current.name) {
     if (await db.prepare("SELECT 1 FROM collections WHERE name = ?").bind(name).first()) throw nameTaken(name);
@@ -85,11 +104,15 @@ collectionRoutes.patch("/:id{[0-9]+}", async (c) => {
     name: name ?? current.name,
     emoji: emoji === undefined ? current.emoji : emoji,
     sort_order: sortOrder ?? current.sort_order,
+    cover_key: cover === undefined ? current.cover_key : cover,
   };
   await db.batch([
-    db.prepare("UPDATE collections SET name = ?, emoji = ?, sort_order = ? WHERE id = ?").bind(next.name, next.emoji, next.sort_order, id),
+    db
+      .prepare("UPDATE collections SET name = ?, emoji = ?, sort_order = ?, cover_key = ? WHERE id = ?")
+      .bind(next.name, next.emoji, next.sort_order, next.cover_key, id),
     bumpRev(db),
   ]);
+  if (current.cover_key && current.cover_key !== next.cover_key) c.executionCtx.waitUntil(dropCover(c.env, current.cover_key));
   return c.json({ collection: next });
 });
 
@@ -102,6 +125,7 @@ collectionRoutes.delete("/:id{[0-9]+}", async (c) => {
     db.prepare("DELETE FROM collections WHERE id = ?").bind(id),
     bumpRev(db),
   ]);
+  await dropCover(c.env, current.cover_key);
   return c.json({ deleted: current });
 });
 

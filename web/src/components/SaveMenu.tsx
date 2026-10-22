@@ -121,7 +121,7 @@ export function SaveMenu({ video, anchor, collections, covers, favorite, onToggl
           <div className="save-list">
             {shown.map((c) => {
               const inside = video.collections.includes(c.id);
-              const cover = covers.get(c.id)?.[0];
+              const cover = mediaUrl(c.cover_key) ?? covers.get(c.id)?.[0];
               return (
                 <button key={c.id} type="button" className="save-row" onClick={() => toggle(c)} disabled={busy !== null}>
                   <span className="save-cover">{cover ? <img src={cover} alt="" /> : <span>{c.emoji || "📁"}</span>}</span>

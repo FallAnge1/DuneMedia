@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressDialog,
     QPushButton, QRadioButton, QTableView, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -239,6 +242,7 @@ class CollectionsDialog(QDialog):
         layout.addWidget(self.list, 1)
         side = QVBoxLayout()
         for text, fn in (("Создать…", self.create), ("Переименовать…", self.rename), ("Эмодзи…", self.emoji),
+                         ("Обложка…", self.cover), ("Убрать обложку", self.remove_cover),
                          ("Выше", lambda: self.move(-1)), ("Ниже", lambda: self.move(1)), ("Удалить", self.delete)):
             b = QPushButton(text)
             b.clicked.connect(fn)
@@ -255,7 +259,8 @@ class CollectionsDialog(QDialog):
         current = self.current()
         self.list.clear()
         for c in self.ctx.collections:
-            item = QListWidgetItem(f"{c.get('emoji') or ''} {c['name']}  ({c.get('count', 0)})".strip())
+            mark = "  🖼" if c.get("cover_key") else ""
+            item = QListWidgetItem(f"{c.get('emoji') or ''} {c['name']}  ({c.get('count', 0)}){mark}".strip())
             item.setData(Qt.ItemDataRole.UserRole, c)
             self.list.addItem(item)
             if current and c["id"] == current["id"]:
@@ -292,6 +297,35 @@ class CollectionsDialog(QDialog):
             api = self.ctx.api
             self._run(lambda: api.patch_collection(c["id"], emoji=emoji.strip() or None))
 
+    def cover(self) -> None:
+        c = self.current()
+        if not c:
+            QMessageBox.information(self, "Обложка", "Сначала выберите коллекцию в списке.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Картинка-обложка", "", "Картинки (*.jpg *.jpeg *.png *.webp *.bmp *.gif)")
+        if not path:
+            return
+        try:
+            jpeg = prepare_cover(Path(path))
+        except ValueError as e:
+            QMessageBox.warning(self, "Обложка", str(e))
+            return
+        api = self.ctx.api
+
+        def upload() -> dict:
+            try:
+                return api.set_collection_cover(c["id"], jpeg)
+            finally:
+                jpeg.unlink(missing_ok=True)
+
+        self._run(upload)
+
+    def remove_cover(self) -> None:
+        c = self.current()
+        if c and c.get("cover_key"):
+            api = self.ctx.api
+            self._run(lambda: api.patch_collection(c["id"], cover_key=None))
+
     def move(self, delta: int) -> None:
         c = self.current()
         if not c:
@@ -309,6 +343,33 @@ class CollectionsDialog(QDialog):
         if c and QMessageBox.question(self, "Коллекции", f"Удалить коллекцию «{c['name']}»? Видео останутся в архиве.") == QMessageBox.StandardButton.Yes:
             api = self.ctx.api
             self._run(lambda: api.delete_collection(c["id"]))
+
+
+COVER_MAX_SIDE = 1600
+
+
+def prepare_cover(path: Path) -> Path:
+    """Уменьшает картинку до 1600 px по большей стороне и сохраняет во временный JPEG."""
+    image = QImage(str(path))
+    if image.isNull():
+        raise ValueError("Не получилось открыть картинку. Подойдут JPG, PNG или WebP.")
+    if max(image.width(), image.height()) > COVER_MAX_SIDE:
+        image = image.scaled(COVER_MAX_SIDE, COVER_MAX_SIDE, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+    if image.hasAlphaChannel():  # прозрачный фон → белый
+        flat = QImage(image.size(), QImage.Format.Format_RGB32)
+        flat.fill(Qt.GlobalColor.white)
+        painter = QPainter(flat)
+        painter.drawImage(0, 0, image)
+        painter.end()
+        image = flat
+    fd, name = tempfile.mkstemp(prefix="cover-", suffix=".jpg")
+    os.close(fd)
+    out = Path(name)
+    if not image.save(str(out), "JPEG", 86):
+        out.unlink(missing_ok=True)
+        raise ValueError("Не получилось сохранить картинку.")
+    return out
 
 
 class TagsDialog(QDialog):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -135,7 +136,7 @@ class ApiClient:
         return self.request("DELETE", f"/api/videos/{video_id}")["deleted"]
 
     def put_media(self, key: str, path: Path) -> dict:
-        content_type = "video/mp4" if key.endswith(".mp4") else "image/webp" if key.endswith(".webp") else "image/jpeg"
+        content_type = {".mp4": "video/mp4", ".webp": "image/webp", ".png": "image/png"}.get(Path(key).suffix.lower(), "image/jpeg")
         return self.request("PUT", f"/api/media/{key}", content=path.read_bytes(), headers={"Content-Type": content_type})
 
     def delete_media(self, key: str) -> None:
@@ -164,6 +165,12 @@ class ApiClient:
 
     def patch_collection(self, collection_id: int, **fields: Any) -> dict:
         return self.request("PATCH", f"/api/collections/{collection_id}", json=fields)["collection"]
+
+    def set_collection_cover(self, collection_id: int, image: Path) -> dict:
+        """Загружает картинку-обложку доски (JPEG) и привязывает её к коллекции."""
+        key = f"covers/board-{collection_id}-{secrets.token_hex(4)}.jpg"
+        self.put_media(key, image)
+        return self.patch_collection(collection_id, cover_key=key)
 
     def order_collections(self, ids: list[int]) -> list[dict]:
         return self.request("PUT", "/api/collections/order", json={"ids": ids})["collections"]

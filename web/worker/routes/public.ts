@@ -10,7 +10,7 @@ const TAGS_WITH_COUNTS = `SELECT t.id, t.name, count(vt.video_id) AS count
   FROM tags t LEFT JOIN video_tags vt ON vt.tag_id = t.id
   GROUP BY t.id ORDER BY count DESC, t.name`;
 
-const COLLECTIONS_WITH_COUNTS = `SELECT c.id, c.name, c.emoji, c.sort_order, count(vc.video_id) AS count
+const COLLECTIONS_WITH_COUNTS = `SELECT c.id, c.name, c.emoji, c.sort_order, c.cover_key, count(vc.video_id) AS count
   FROM collections c LEFT JOIN video_collections vc ON vc.collection_id = c.id
   GROUP BY c.id ORDER BY c.sort_order, c.name`;
 
@@ -44,7 +44,7 @@ async function buildLibrary(db: D1Database): Promise<{ rev: number; json: string
   const statements: D1PreparedStatement[] = [
     db.prepare(`SELECT json_group_array(json_object('id', id, 'name', name, 'count', count)) AS j FROM (${TAGS_WITH_COUNTS})`),
     db.prepare(
-      `SELECT json_group_array(json_object('id', id, 'name', name, 'emoji', emoji, 'sort_order', sort_order, 'count', count)) AS j
+      `SELECT json_group_array(json_object('id', id, 'name', name, 'emoji', emoji, 'sort_order', sort_order, 'cover_key', cover_key, 'count', count)) AS j
        FROM (${COLLECTIONS_WITH_COUNTS})`,
     ),
   ];

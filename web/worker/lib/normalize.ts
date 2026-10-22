@@ -128,10 +128,12 @@ export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 export const HASH_RE = /^[0-9a-f]{64}$/;
 
 /**
- * Ключи файлов в R2: previews/<имя>.mp4, posters/<имя>.jpg|webp.
+ * Ключи файлов в R2: previews/<имя>.mp4, posters/<имя>.jpg|webp, covers/<имя>.jpg|png|webp (обложки досок).
  * Загрузчик добавляет к имени случайный суффикс, поэтому файлы можно кэшировать навсегда.
  */
-export const MEDIA_KEY_RE = /^(previews\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.mp4|posters\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:jpg|webp))$/;
+export const MEDIA_KEY_RE =
+  /^(previews\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.mp4|posters\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:jpg|webp)|covers\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:jpg|png|webp))$/;
+export const COVER_KEY_RE = /^covers\//;
 
 export function optMediaKey(body: Record<string, unknown>, key: string): string | null | undefined {
   const v = body[key];
@@ -146,5 +148,6 @@ export function optMediaKey(body: Record<string, unknown>, key: string): string 
 export function contentTypeForKey(key: string): string {
   if (key.endsWith(".mp4")) return "video/mp4";
   if (key.endsWith(".webp")) return "image/webp";
+  if (key.endsWith(".png")) return "image/png";
   return "image/jpeg";
 }

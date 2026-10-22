@@ -15,7 +15,7 @@
 |---|---|
 | `GET /api/library` | Весь архив одним JSON: `{ rev, generated_at, videos[], tags[], collections[] }`. Есть `ETag` (по ревизии архива) и ответ `304`, если ничего не менялось |
 | `GET /api/tags` | `{ tags: [{ id, name, count }] }`, по убыванию популярности |
-| `GET /api/collections` | `{ collections: [{ id, name, emoji, sort_order, count }] }` |
+| `GET /api/collections` | `{ collections: [{ id, name, emoji, sort_order, cover_key, count }] }` |
 | `GET /api/videos/:id` | Одно видео с тегами и коллекциями |
 | `GET /api/search?q=…&limit=100` | Полнотекстовый поиск (FTS5, по префиксам слов): `{ ids: [...] }` |
 | `GET /media/<ключ>` | Превью и постеры из R2. Поддерживает `Range`, `ETag`, кэшируется на год |
@@ -59,8 +59,8 @@
 | `POST /api/tags/merge` | `{ source_ids: [..], target_id }` | слить теги → `{ tag, merged_ids, affected_video_ids }` |
 | `DELETE /api/tags/:id` | — | удалить тег → `{ deleted, affected_video_ids }` |
 | `DELETE /api/tags/unused` | — | удалить теги без видео |
-| `POST /api/collections` | `{ name, emoji?, sort_order? }` | создать коллекцию |
-| `PATCH /api/collections/:id` | `{ name?, emoji?, sort_order? }` | изменить |
+| `POST /api/collections` | `{ name, emoji?, sort_order?, cover_key? }` | создать коллекцию |
+| `PATCH /api/collections/:id` | `{ name?, emoji?, sort_order?, cover_key? }` | изменить. `cover_key` — картинка, заранее загруженная через `PUT /api/media/covers/<имя>.jpg\|png\|webp`; `null` — убрать (вернуть авто-обложку). Старая картинка удаляется из R2 |
 | `PUT /api/collections/order` | `{ ids: [3, 1, 2] }` | новый порядок |
 | `DELETE /api/collections/:id` | — | удалить (видео остаются) |
 | `POST /api/collections/:id/videos` | `{ add?: [id], remove?: [id] }` | массово добавить/убрать видео |

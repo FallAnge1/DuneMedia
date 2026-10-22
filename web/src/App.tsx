@@ -336,7 +336,15 @@ export function App() {
             />
           ) : (
             <>
-              {boardTitle && <BoardHeader title={boardTitle} count={boardCount} board={currentBoard} onBack={goBoards} />}
+              {boardTitle && (
+                <BoardHeader
+                  title={boardTitle}
+                  count={boardCount}
+                  board={currentBoard}
+                  autoCover={currentBoard ? covers.get(currentBoard.id)?.[0] : favCovers[0]}
+                  onBack={goBoards}
+                />
+              )}
               <TagStrip selected={filters.tags} counts={tagsInResults} onToggle={toggleTag} />
               <ActiveChips
                 filters={filters}

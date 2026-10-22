@@ -100,7 +100,7 @@ mediaUploadRoutes.use("*", requireUploader);
 function keyFromPath(url: string): string {
   const key = decodeURIComponent(new URL(url).pathname.replace(/^\/api\/media\//, ""));
   if (!MEDIA_KEY_RE.test(key)) {
-    throw badRequest("Некорректный ключ файла. Допустимо: previews/<имя>.mp4, posters/<имя>.jpg или .webp");
+    throw badRequest("Некорректный ключ файла. Допустимо: previews/<имя>.mp4, posters/<имя>.jpg|webp, covers/<имя>.jpg|png|webp");
   }
   return key;
 }
@@ -109,6 +109,7 @@ function looksLike(key: string, bytes: Uint8Array): boolean {
   const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
   if (key.endsWith(".mp4")) return bytes.length > 12 && ascii(4, 8) === "ftyp";
   if (key.endsWith(".webp")) return bytes.length > 12 && ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
+  if (key.endsWith(".png")) return bytes.length > 8 && bytes[0] === 0x89 && ascii(1, 4) === "PNG";
   return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
 
@@ -140,6 +141,8 @@ mediaUploadRoutes.delete("/*", async (c) => {
     .bind(key)
     .first<{ id: string }>();
   if (used) throw new ApiError(409, "media_in_use", "Файл используется видео", { video_id: used.id });
+  const cover = await c.env.DB.prepare("SELECT id FROM collections WHERE cover_key = ? LIMIT 1").bind(key).first<{ id: number }>();
+  if (cover) throw new ApiError(409, "media_in_use", "Файл — обложка доски", { collection_id: cover.id });
   await c.env.PREVIEWS.delete(key);
   return c.json({ deleted: key });
 });

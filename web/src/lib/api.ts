@@ -39,6 +39,8 @@ export interface Collection {
   name: string;
   emoji: string | null;
   sort_order: number;
+  /** Своя обложка (covers/…); null — обложка из постеров видео. */
+  cover_key: string | null;
   count: number;
 }
 
@@ -100,12 +102,25 @@ export const api = {
 
   createCollection: (token: string, name: string, emoji: string | null) =>
     apiCall<{ collection: Collection }>(token, "POST", "/api/collections", { name, emoji }),
-  patchCollection: (token: string, id: number, body: { name?: string; emoji?: string | null }) =>
+  patchCollection: (token: string, id: number, body: { name?: string; emoji?: string | null; cover_key?: string | null }) =>
     apiCall<{ collection: Collection }>(token, "PATCH", `/api/collections/${id}`, body),
   orderCollections: (token: string, ids: number[]) => apiCall(token, "PUT", "/api/collections/order", { ids }),
   deleteCollection: (token: string, id: number) => apiCall(token, "DELETE", `/api/collections/${id}`),
   collectionVideos: (token: string, id: number, body: { add?: string[]; remove?: string[] }) =>
     apiCall<{ count: number }>(token, "POST", `/api/collections/${id}/videos`, body),
+
+  /** Загрузка картинки в R2 (обложка доски). */
+  uploadMedia: async (token: string, key: string, blob: Blob) => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/media/${key}`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": blob.type }, body: blob });
+    } catch {
+      throw new ApiRequestError(0, "network", "Нет связи с сервером. Проверьте интернет.");
+    }
+    const data = (await res.json().catch(() => null)) as { error?: { code: string; message: string } } | null;
+    if (!res.ok) throw new ApiRequestError(res.status, data?.error?.code ?? "http", data?.error?.message ?? `Ошибка загрузки (${res.status})`);
+    return data as { key: string };
+  },
 
   renameTag: (token: string, id: number, name: string) =>
     apiCall<{ affected_video_ids: string[] }>(token, "PATCH", `/api/tags/${id}`, { name }),

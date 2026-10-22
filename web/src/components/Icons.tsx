@@ -106,3 +106,6 @@ export const IconBack = (p: P) => (
 export const IconMore = (p: P) => (
   <svg {...base(p)} fill="currentColor" stroke="none"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
 );
+export const IconImage = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="10" r="2" /><path d="m21 16-5-5-9 9" /></svg>
+);
