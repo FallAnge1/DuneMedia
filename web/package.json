@@ -1,0 +1,29 @@
+{
+  "name": "video-archive-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "uploader:create": "node scripts/uploader.mjs create",
+    "uploader:revoke": "node scripts/uploader.mjs revoke",
+    "uploader:list": "node scripts/uploader.mjs list",
+    "types": "wrangler types --strict-vars=false",
+    "pretest": "node scripts/ensure-dist.mjs",
+    "predev": "node scripts/ensure-dist.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.6",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.124.0"
+  }
+}

@@ -1,0 +1,22 @@
+# Зависимости и сборка
+node_modules/
+web/dist/
+web/.wrangler/
+__pycache__/
+*.pyc
+.venv/
+uploader/build/
+uploader/dist/
+
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+.dev.vars
+*.session
+*.session-journal
+
+# Системное
+.DS_Store
+Thumbs.db
+*.log
