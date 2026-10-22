@@ -94,3 +94,15 @@ export function OrientationIcon({ orientation, size = 12 }: { orientation: strin
     </svg>
   );
 }
+export const IconPlus = (p: P) => (
+  <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
+);
+export const IconGrid = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="3" width="8" height="10" rx="2" /><rect x="13" y="3" width="8" height="6" rx="2" /><rect x="3" y="15" width="8" height="6" rx="2" /><rect x="13" y="11" width="8" height="10" rx="2" /></svg>
+);
+export const IconBack = (p: P) => (
+  <svg {...base(p)}><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
+);
+export const IconMore = (p: P) => (
+  <svg {...base(p)} fill="currentColor" stroke="none"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+);

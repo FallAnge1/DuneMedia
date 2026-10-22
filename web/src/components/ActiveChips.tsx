@@ -12,9 +12,10 @@ interface Props {
 
 /** Активные фильтры чипсами над сеткой и счётчик найденного. */
 export function ActiveChips({ filters: f, found, ...p }: Props) {
+  void p.onRemoveTag;
   const chips: { key: string; label: string; remove: () => void }[] = [];
   if (f.q) chips.push({ key: "q", label: `«${f.q}»`, remove: p.onClearQuery });
-  for (const t of f.tags) chips.push({ key: `t:${t}`, label: `#${t}`, remove: () => p.onRemoveTag(t) });
+  // Выбранные теги показываются в полосе тегов над сеткой.
   for (const o of f.orientation) {
     chips.push({ key: `o:${o}`, label: ORIENTATIONS.find((x) => x.value === o)!.label, remove: () => p.onRemove("orientation", o) });
   }
@@ -34,7 +35,7 @@ export function ActiveChips({ filters: f, found, ...p }: Props) {
           <IconClose size={12} />
         </button>
       ))}
-      {chips.length > 1 && (
+      {chips.length + f.tags.length > 1 && (
         <button type="button" className="link-btn" onClick={p.onReset}>
           Сбросить всё
         </button>

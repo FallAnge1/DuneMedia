@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Orientation, ResolutionLabel } from "../lib/api";
-import { DURATIONS, ORIENTATIONS, RESOLUTIONS, type DurationBucket, type Filters } from "../lib/filters";
+import { DURATIONS, ORIENTATIONS, RESOLUTIONS, SORTS, type DurationBucket, type Filters, type SortKey } from "../lib/filters";
 import { IconClose, OrientationIcon } from "./Icons";
 
 interface Props {
@@ -19,6 +19,10 @@ interface Props {
   onToggle: (group: "orientation" | "resolution" | "duration", value: string) => void;
   onReset: () => void;
   hasActive: boolean;
+  onSort: (sort: SortKey) => void;
+  tileSize: number;
+  onTileSize: (n: number) => void;
+  found: number;
 }
 
 const TAG_LIMIT = 40;
@@ -52,6 +56,21 @@ export function FilterPanel(p: Props) {
             <IconClose />
           </button>
         </div>
+
+        <section className="filter-group">
+          <h3>Сортировка</h3>
+          <select className="select select-block" value={p.filters.sort} onChange={(e) => p.onSort(e.target.value as SortKey)} aria-label="Сортировка">
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <label className="tile-slider">
+            <span className="small muted">Размер плиток</span>
+            <input type="range" min={140} max={480} step={10} value={p.tileSize} onChange={(e) => p.onTileSize(Number(e.target.value))} />
+          </label>
+        </section>
 
         <section className="filter-group">
           <h3>Теги</h3>
@@ -132,9 +151,14 @@ export function FilterPanel(p: Props) {
           ))}
         </section>
 
-        <button type="button" className="btn btn-block" onClick={p.onReset} disabled={!p.hasActive}>
-          Сбросить фильтры
-        </button>
+        <div className="filters-foot">
+          <button type="button" className="btn" onClick={p.onReset} disabled={!p.hasActive}>
+            Сбросить
+          </button>
+          <button type="button" className="btn btn-primary" onClick={p.onClose}>
+            Показать {p.found.toLocaleString("ru-RU")}
+          </button>
+        </div>
       </aside>
     </>
   );

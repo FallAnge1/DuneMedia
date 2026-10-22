@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mediaUrl, type Collection, type Video } from "../lib/api";
 import { formatDate, formatDuration, formatFps, formatSize, telegramUrl } from "../lib/format";
 import { copyText, openInTelegram } from "../lib/telegram";
@@ -20,6 +20,9 @@ interface Props {
   onClose: () => void;
   onTagClick: (tag: string) => void;
   onCollectionClick: (id: number) => void;
+  onSave: (anchor: DOMRect) => void;
+  similar: Video[];
+  onOpenSimilar: (id: string) => void;
 }
 
 /** Окно просмотра: большое превью, все метаданные, переход в Telegram, листание ← →. */
@@ -47,6 +50,29 @@ export function Viewer(p: Props) {
   const tgLink = telegramUrl(v.tg_channel, v.tg_message_id);
   const collections = p.collections.filter((c) => v.collections.includes(c.id));
   const ratio = v.width && v.height ? `${v.width} / ${v.height}` : "16 / 9";
+  const aspect = v.width && v.height ? v.width / v.height : 16 / 9;
+
+  // На широком экране рамка видео подгоняется точно под его пропорции (без чёрных полей).
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const fit = () => {
+      if (!window.matchMedia("(min-width: 901px)").matches) {
+        setBox(null);
+        return;
+      }
+      const w = el.clientWidth - 32;
+      const h = el.clientHeight - 32;
+      if (w <= 0 || h <= 0) return;
+      setBox(w / h > aspect ? { width: Math.round(h * aspect), height: h } : { width: w, height: Math.round(w / aspect) });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [aspect]);
 
   const copy = async (text: string, what: string) => {
     toast((await copyText(text)) ? `${what} скопирована` : "Не удалось скопировать", "success");
@@ -55,8 +81,8 @@ export function Viewer(p: Props) {
   return (
     <Modal onClose={p.onClose} className="viewer" label={v.title}>
       <div className="viewer-body">
-        <div className="viewer-stage">
-          <div className="viewer-media" style={{ aspectRatio: ratio }}>
+        <div className="viewer-stage" ref={stageRef}>
+          <div className="viewer-media" style={box ?? { aspectRatio: ratio }}>
             {preview ? (
               <video key={v.id} src={preview} poster={poster} autoPlay muted loop playsInline controls preload="auto" />
             ) : poster ? (
@@ -99,29 +125,40 @@ export function Viewer(p: Props) {
             />
           ) : (
             <>
+              <div className="viewer-toolbar">
+                <button
+                  type="button"
+                  className={`icon-btn round${p.favorite ? " is-fav" : ""}`}
+                  onClick={() => p.onToggleFavorite(v.id)}
+                  aria-pressed={p.favorite}
+                  title={p.favorite ? "Убрать из избранного" : "В избранное"}
+                  aria-label={p.favorite ? "Убрать из избранного" : "В избранное"}
+                >
+                  <IconHeart filled={p.favorite} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn round"
+                  onClick={() => copy(window.location.href, "Ссылка на это видео на сайте")}
+                  title="Ссылка на это видео на сайте"
+                  aria-label="Ссылка на это видео на сайте"
+                >
+                  <IconLink />
+                </button>
+                <button type="button" className={`btn btn-save${v.collections.length ? " is-saved" : ""}`} onClick={(e) => p.onSave(e.currentTarget.getBoundingClientRect())}>
+                  {v.collections.length ? "Сохранено" : "Сохранить"}
+                </button>
+              </div>
+
               <h2 className="viewer-title">{v.title}</h2>
               {v.description && <p className="viewer-desc">{v.description}</p>}
 
               <div className="viewer-actions">
-                <button type="button" className="btn btn-primary" onClick={() => openInTelegram(v.tg_channel, v.tg_message_id)}>
-                  <IconTelegram /> Открыть в Telegram
+                <button type="button" className="btn btn-dark btn-block" onClick={() => openInTelegram(v.tg_channel, v.tg_message_id)}>
+                  <IconTelegram /> Открыть в Telegram и скачать
                 </button>
-                <div className="btn-row">
-                  <button type="button" className="btn" onClick={() => copy(tgLink, "Ссылка на пост")} title={tgLink}>
-                    <IconCopy /> Скопировать ссылку
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-icon${p.favorite ? " is-on" : ""}`}
-                    onClick={() => p.onToggleFavorite(v.id)}
-                    aria-pressed={p.favorite}
-                    title={p.favorite ? "Убрать из избранного" : "В избранное"}
-                  >
-                    <IconHeart filled={p.favorite} /> {p.favorite ? "В избранном" : "В избранное"}
-                  </button>
-                </div>
-                <button type="button" className="link-btn small" onClick={() => copy(window.location.href, "Ссылка на это видео на сайте")}>
-                  <IconLink size={14} /> Ссылка на это видео на сайте
+                <button type="button" className="link-btn small" onClick={() => copy(tgLink, "Ссылка на пост")}>
+                  <IconCopy size={14} /> Скопировать ссылку
                 </button>
               </div>
 
@@ -137,6 +174,7 @@ export function Viewer(p: Props) {
 
               {collections.length > 0 && (
                 <div className="viewer-collections">
+                  <span className="muted small">На досках:</span>
                   {collections.map((c) => (
                     <button key={c.id} type="button" className="pill" onClick={() => p.onCollectionClick(c.id)}>
                       {c.emoji} {c.name}
@@ -186,6 +224,20 @@ export function Viewer(p: Props) {
               )}
               {editor && v.caption_dirty === 1 && (
                 <p className="muted small">Подпись поста в Telegram обновит программа-загрузчик при следующем запуске.</p>
+              )}
+
+              {p.similar.length > 0 && (
+                <div className="similar">
+                  <h3>Похожие видео</h3>
+                  <div className="similar-grid">
+                    {p.similar.map((s) => (
+                      <button key={s.id} type="button" className="similar-item" onClick={() => p.onOpenSimilar(s.id)} title={s.title}>
+                        {s.poster_key ? <img src={mediaUrl(s.poster_key)} alt="" loading="lazy" /> : <span className="card-noposter" />}
+                        <span>{s.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </>
           )}

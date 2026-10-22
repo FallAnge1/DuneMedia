@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Video } from "../lib/api";
-import { VideoCard } from "./VideoCard";
+import { CAPTION_H, VideoCard } from "./VideoCard";
 
 interface Props {
   videos: Video[];
@@ -12,6 +12,7 @@ interface Props {
   onActivate: (id: string | null) => void;
   onOpen: (id: string) => void;
   onToggleFavorite: (id: string) => void;
+  onSave: (id: string, anchor: DOMRect) => void;
   onToggleSelect: (id: string, shift: boolean) => void;
 }
 
@@ -54,7 +55,7 @@ export function MasonryGrid(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  const gap = width < 640 ? 8 : 12;
+  const gap = width < 640 ? 10 : 16;
 
   const layout = useMemo(() => {
     if (width <= 0) return { boxes: [] as Box[], height: 0 };
@@ -64,7 +65,7 @@ export function MasonryGrid(props: Props) {
     const boxes: Box[] = videos.map((v) => {
       let col = 0;
       for (let i = 1; i < cols; i++) if (heights[i]! < heights[col]!) col = i;
-      const h = Math.round(colWidth * aspectOf(v));
+      const h = Math.round(colWidth * aspectOf(v)) + CAPTION_H;
       const box = { x: Math.round(col * (colWidth + gap)), y: heights[col]!, w: Math.round(colWidth), h };
       heights[col] = heights[col]! + h + gap;
       return box;
@@ -119,11 +120,13 @@ export function MasonryGrid(props: Props) {
             priority={i < 8}
             active={props.activeId === v.id}
             favorite={props.favorites.has(v.id)}
+            saved={v.collections.length > 0}
             selected={props.selected.has(v.id)}
             selectMode={props.selectMode}
             onActivate={props.onActivate}
             onOpen={props.onOpen}
             onToggleFavorite={props.onToggleFavorite}
+            onSave={props.onSave}
             onToggleSelect={props.onToggleSelect}
           />
         );
@@ -139,7 +142,7 @@ export function GridSkeleton({ tileSize }: { tileSize: number }) {
   useLayoutEffect(() => {
     if (ref.current) setWidth(ref.current.getBoundingClientRect().width);
   }, []);
-  const gap = width < 640 ? 8 : 12;
+  const gap = width < 640 ? 10 : 16;
   const cols = width ? columnsFor(width, tileSize, gap) : 4;
   const ratios = [0.56, 1.4, 0.75, 1, 0.56, 1.78, 0.56, 1.2];
   return (

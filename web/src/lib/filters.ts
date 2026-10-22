@@ -72,9 +72,15 @@ export function filtersFromUrl(search: string): Filters {
   };
 }
 
-/** Строит строку запроса. Видео, открытое в просмотре, хранится в параметре v. */
-export function filtersToUrl(f: Filters, openVideoId: string | null): string {
+/** Страница: лента видео или список досок (коллекций). */
+export type Page = "home" | "boards";
+
+export const pageFromUrl = (search: string): Page => (new URLSearchParams(search).get("p") === "boards" ? "boards" : "home");
+
+/** Строит строку запроса. Видео, открытое в просмотре, хранится в параметре v, страница досок — p=boards. */
+export function filtersToUrl(f: Filters, openVideoId: string | null, page: Page = "home"): string {
   const p = new URLSearchParams();
+  if (page === "boards") p.set("p", "boards");
   if (f.q) p.set("q", f.q);
   if (f.tab !== "all") p.set("c", String(f.tab));
   // Теги могут содержать запятые и пробелы, поэтому каждый — отдельным параметром.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Video } from "./lib/api";
+import { mediaUrl, type Video } from "./lib/api";
 import {
   applyFilters,
   EMPTY_FILTERS,
@@ -8,13 +8,17 @@ import {
   hasActiveFilters,
   sortVideos,
   tagCounts,
-  type CollectionTab,
+  pageFromUrl,
   type Filters,
+  type Page,
 } from "./lib/filters";
 import { buildSearchIndex, searchIds } from "./lib/search";
 import { useStoredState } from "./lib/storage";
 import { useApp } from "./state";
 import { ActiveChips } from "./components/ActiveChips";
+import { BoardHeader, BoardsPage, type BoardTarget } from "./components/Boards";
+import { boardCovers, SaveMenu } from "./components/SaveMenu";
+import { TagStrip } from "./components/TagStrip";
 import { BulkBar } from "./components/BulkBar";
 import { FilterPanel } from "./components/FilterPanel";
 import { LoginDialog } from "./components/LoginDialog";
@@ -24,26 +28,26 @@ import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
 import { Viewer } from "./components/Viewer";
 
-const isNarrow = () => window.matchMedia("(max-width: 900px)").matches;
-
 export function App() {
   const { library, loadError, reload, editor, logout, toast } = useApp();
 
   // ---- Состояние в URL ----
   const [filters, setFilters] = useState<Filters>(() => filtersFromUrl(window.location.search));
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("v"));
+  const [page, setPage] = useState<Page>(() => pageFromUrl(window.location.search));
   const pushedViewer = useRef(false);
 
   useEffect(() => {
-    const url = window.location.pathname + filtersToUrl(filters, openId);
+    const url = window.location.pathname + filtersToUrl(filters, openId, page);
     if (url !== window.location.pathname + window.location.search) window.history.replaceState(null, "", url);
-  }, [filters, openId]);
+  }, [filters, openId, page]);
 
   useEffect(() => {
     const onPop = () => {
       pushedViewer.current = false;
       setFilters(filtersFromUrl(window.location.search));
       setOpenId(new URLSearchParams(window.location.search).get("v"));
+      setPage(pageFromUrl(window.location.search));
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -53,12 +57,12 @@ export function App() {
     (id: string) => {
       // Открытие просмотра — новый шаг истории: «Назад» в браузере закроет окно.
       if (!pushedViewer.current) {
-        window.history.pushState(null, "", window.location.pathname + filtersToUrl(filters, id));
+        window.history.pushState(null, "", window.location.pathname + filtersToUrl(filters, id, page));
         pushedViewer.current = true;
       }
       setOpenId(id);
     },
-    [filters],
+    [filters, page],
   );
 
   const closeVideo = useCallback(() => {
@@ -76,14 +80,14 @@ export function App() {
 
   // ---- Настройки вида (localStorage) ----
   const [tileSize, setTileSize] = useStoredState("va.tileSize", 260);
-  const [theme, setTheme] = useStoredState<"dark" | "light">("va.theme", "dark");
+  const [theme, setTheme] = useStoredState<"dark" | "light">("va.theme", "light");
   const [favoriteList, setFavoriteList] = useStoredState<string[]>("va.favorites", []);
   const favorites = useMemo(() => new Set(favoriteList), [favoriteList]);
-  const [filtersOpen, setFiltersOpen] = useState(() => !isNarrow());
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#0f1012" : "#f6f5f2");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#121212" : "#ffffff");
   }, [theme]);
 
   const toggleFavorite = useCallback(
@@ -213,23 +217,72 @@ export function App() {
 
   const collections = library?.collections ?? [];
 
+  // ---- Доски ----
+  const covers = useMemo(() => boardCovers(videos), [videos]);
+  const latestPosters = (list: Video[]) =>
+    [...list]
+      .sort((a, b) => b.created_at - a.created_at)
+      .map((v) => mediaUrl(v.poster_key))
+      .filter((x): x is string => !!x)
+      .slice(0, 3);
+  const allCovers = useMemo(() => latestPosters(videos), [videos]);
+  const favCovers = useMemo(() => latestPosters(videos.filter((v) => favorites.has(v.id))), [videos, favorites]);
+
+  const goHome = useCallback(() => {
+    setPage("home");
+    setFilters((f) => ({ ...EMPTY_FILTERS, sort: f.sort }));
+    window.scrollTo({ top: 0 });
+  }, []);
+  const goBoards = useCallback(() => {
+    setPage("boards");
+    setFilters((f) => ({ ...f, tab: "all" }));
+    window.scrollTo({ top: 0 });
+  }, []);
+  const openBoard = useCallback((target: BoardTarget) => {
+    setPage("home");
+    setFilters((f) => ({ ...EMPTY_FILTERS, sort: f.sort, tab: target }));
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const currentBoard = typeof filters.tab === "number" ? collections.find((c) => c.id === filters.tab) ?? null : null;
+  const boardTitle =
+    filters.tab === "fav" ? "♡ Избранное" : currentBoard ? `${currentBoard.emoji ? `${currentBoard.emoji} ` : ""}${currentBoard.name}` : null;
+  const boardCount = filters.tab === "fav" ? favoritesCount : currentBoard?.count ?? 0;
+
+  // ---- «Сохранить» ----
+  const [saveFor, setSaveFor] = useState<{ id: string; anchor: DOMRect } | null>(null);
+  const openSave = useCallback((id: string, anchor: DOMRect) => setSaveFor({ id, anchor }), []);
+  const saveVideo = saveFor ? videoMap.get(saveFor.id) : undefined;
+
+  // ---- Похожие видео: больше общих тегов — выше ----
+  const similar = useMemo(() => {
+    if (!openVideoData || openVideoData.tags.length === 0) return [];
+    const own = new Set(openVideoData.tags);
+    return videos
+      .filter((v) => v.id !== openVideoData.id)
+      .map((v) => ({ v, score: v.tags.filter((t) => own.has(t)).length }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || b.v.created_at - a.v.created_at)
+      .slice(0, 9)
+      .map((x) => x.v);
+  }, [openVideoData, videos]);
+
   return (
     <div className={`app${filtersOpen ? " filters-open" : ""}${selectMode ? " select-mode" : ""}`}>
       <TopBar
         ref={searchRef}
         filters={filters}
-        onQuery={(q) => update({ q })}
-        onTab={(tab: CollectionTab) => update({ tab })}
-        onSort={(sort) => update({ sort })}
-        collections={collections}
-        total={videos.length}
-        favoritesCount={favoritesCount}
-        tileSize={tileSize}
-        onTileSize={setTileSize}
+        page={page}
+        inBoard={filters.tab !== "all"}
+        onQuery={(q) => {
+          if (page === "boards") setPage("home");
+          update({ q });
+        }}
+        onHome={goHome}
+        onBoards={goBoards}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         onToggleFilters={() => setFiltersOpen((o) => !o)}
-        filtersOpen={filtersOpen}
         activeFilterCount={activeCount}
         editor={editor}
         selectMode={selectMode}
@@ -253,6 +306,10 @@ export function App() {
           onToggle={toggleIn}
           onReset={resetFilters}
           hasActive={hasActiveFilters(filters)}
+          onSort={(sort) => update({ sort })}
+          tileSize={tileSize}
+          onTileSize={setTileSize}
+          found={results.length}
         />
 
         <main className="main">
@@ -266,8 +323,21 @@ export function App() {
             </div>
           ) : !library ? (
             <GridSkeleton tileSize={tileSize} />
+          ) : page === "boards" ? (
+            <BoardsPage
+              collections={collections}
+              covers={covers}
+              allCovers={allCovers}
+              favCovers={favCovers}
+              total={videos.length}
+              favoritesCount={favoritesCount}
+              onOpen={openBoard}
+              onLogin={() => setLoginOpen(true)}
+            />
           ) : (
             <>
+              {boardTitle && <BoardHeader title={boardTitle} count={boardCount} board={currentBoard} onBack={goBoards} />}
+              <TagStrip selected={filters.tags} counts={tagsInResults} onToggle={toggleTag} />
               <ActiveChips
                 filters={filters}
                 found={results.length}
@@ -287,6 +357,7 @@ export function App() {
                   onActivate={setActiveId}
                   onOpen={openVideo}
                   onToggleFavorite={toggleFavorite}
+                  onSave={openSave}
                   onToggleSelect={toggleSelect}
                 />
               ) : videos.length === 0 ? (
@@ -300,7 +371,9 @@ export function App() {
                   <p className="muted">
                     {filters.tab === "fav" && favoritesCount === 0
                       ? "В избранном пока ничего нет. Нажмите ♡ на карточке, чтобы добавить."
-                      : "Попробуйте изменить запрос или убрать часть фильтров."}
+                      : currentBoard && currentBoard.count === 0
+                        ? "Доска пока пустая. Нажмите «Сохранить» на любом видео и выберите эту доску."
+                        : "Попробуйте изменить запрос или убрать часть фильтров."}
                   </p>
                   {(hasActiveFilters(filters) || filters.tab !== "all") && (
                     <button type="button" className="btn btn-primary" onClick={() => setFilters({ ...EMPTY_FILTERS, sort: filters.sort })}>
@@ -348,8 +421,24 @@ export function App() {
           }}
           onCollectionClick={(id) => {
             leaveViewer();
-            update({ tab: id });
+            openBoard(id);
           }}
+          onSave={(anchor) => openSave(openVideoData.id, anchor)}
+          similar={similar}
+          onOpenSimilar={(id) => setOpenId(id)}
+        />
+      )}
+
+      {saveFor && saveVideo && (
+        <SaveMenu
+          video={saveVideo}
+          anchor={saveFor.anchor}
+          collections={collections}
+          covers={covers}
+          favorite={favorites.has(saveVideo.id)}
+          onToggleFavorite={toggleFavorite}
+          onClose={() => setSaveFor(null)}
+          onLogin={() => setLoginOpen(true)}
         />
       )}
 

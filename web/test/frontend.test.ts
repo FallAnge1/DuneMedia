@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "../src/lib/api";
-import { applyFilters, EMPTY_FILTERS, filtersFromUrl, filtersToUrl, sortVideos, type Filters } from "../src/lib/filters";
+import { applyFilters, EMPTY_FILTERS, filtersFromUrl, filtersToUrl, pageFromUrl, sortVideos, type Filters } from "../src/lib/filters";
 import { buildSearchIndex, searchIds, stem } from "../src/lib/search";
 
 let n = 0;
@@ -80,6 +80,8 @@ describe("фильтры", () => {
     expect(new URLSearchParams(url).get("v")).toBe("vid-1");
     expect(filtersToUrl(EMPTY_FILTERS, null)).toBe("");
     expect(filtersFromUrl("?o=bogus&sort=bad&c=fav").orientation).toEqual([]);
+    expect(pageFromUrl(filtersToUrl(EMPTY_FILTERS, null, "boards"))).toBe("boards");
+    expect(pageFromUrl("?c=3")).toBe("home");
   });
 });
 
