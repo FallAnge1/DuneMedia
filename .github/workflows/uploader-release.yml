@@ -75,15 +75,26 @@ jobs:
           Move-Item dist\VideoArchive-portable.exe "dist\VideoArchive-${{ steps.ver.outputs.version }}-windows-portable.exe"
 
       # ---------- macOS ----------
-      - name: Самопроверка и .dmg (macOS)
+      - name: Самопроверка (macOS)
         if: runner.os == 'macOS'
         run: |
-          dist/VideoArchive.app/Contents/MacOS/VideoArchive --selftest --selftest-report=selftest.txt || { cat selftest.txt; exit 1; }
-          cat selftest.txt
+          status=0
+          dist/VideoArchive.app/Contents/MacOS/VideoArchive --selftest --selftest-report=selftest.txt || status=$?
+          cat selftest.txt || true
+          exit $status
+
+      - name: .dmg (macOS)
+        if: runner.os == 'macOS'
+        run: |
           # Подпись «ad-hoc»: без платного сертификата Apple, но приложение запускается на Apple Silicon.
           codesign --force --deep --sign - dist/VideoArchive.app
-          hdiutil create -volname "Видеоархив" -srcfolder dist/VideoArchive.app -ov -format UDZO \
-            "dist/VideoArchive-${{ steps.ver.outputs.version }}-${{ matrix.platform }}.dmg"
+          # hdiutil на раннерах GitHub иногда отвечает «Resource busy» — повторяем.
+          for attempt in 1 2 3 4 5; do
+            hdiutil create -volname "Видеоархив" -srcfolder dist/VideoArchive.app -ov -format UDZO \
+              "dist/VideoArchive-${{ steps.ver.outputs.version }}-${{ matrix.platform }}.dmg" && exit 0
+            echo "hdiutil: попытка $attempt не удалась, повтор через 10 с"; sleep 10
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
