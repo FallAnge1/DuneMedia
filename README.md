@@ -11,7 +11,7 @@ Telegram-канале, сайт показывает их плиткой с пр
 | Программа-загрузчик: Python + PySide6 + Telethon | `uploader/` | ✅ этапы 3–4 |
 | Сборка (Windows, macOS) и инструкции | `uploader/build/`, `.github/workflows/`, `docs/` | ✅ этап 5 |
 
-**Начать:** [docs/README.md](docs/README.md) — пошаговая настройка канала, сайта и программы.
+**Начать:** [docs/00-quickstart.md](docs/00-quickstart.md) — от нуля до первого видео по шагам.
 
 ## Сайт
 
