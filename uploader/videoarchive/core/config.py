@@ -27,19 +27,15 @@ class AIProviderConfig:
 
 
 def default_ai_providers() -> list[AIProviderConfig]:
-    """Порядок фолбэка по умолчанию (раздел 7 ТЗ). Ключей нет — провайдеры без ключа пропускаются."""
+    """Порядок фолбэка по умолчанию (раздел 7 ТЗ). Без ключа провайдер пропускается.
+
+    Пустой список моделей — программа сама спросит у провайдера актуальные бесплатные vision-модели.
+    """
     return [
-        AIProviderConfig("groq", models=["meta-llama/llama-4-scout-17b-16e-instruct"]),
-        AIProviderConfig(
-            "openrouter",
-            models=[
-                "google/gemma-3-27b-it:free",
-                "mistralai/mistral-small-3.2-24b-instruct:free",
-                "qwen/qwen2.5-vl-72b-instruct:free",
-            ],
-        ),
-        AIProviderConfig("workers_ai", models=["@cf/mistralai/mistral-small-3.1-24b-instruct"]),
-        AIProviderConfig("gemini", models=["gemini-2.5-flash", "gemini-2.0-flash"]),
+        AIProviderConfig("groq", models=["qwen/qwen3.6-27b", "meta-llama/llama-4-scout-17b-16e-instruct"]),
+        AIProviderConfig("openrouter", models=[]),
+        AIProviderConfig("workers_ai", models=[]),  # модель по умолчанию задана на сайте (AI_MODEL)
+        AIProviderConfig("gemini", models=["gemini-flash-latest", "gemini-2.5-flash"]),
         AIProviderConfig("ollama", enabled=False, models=["qwen2.5vl:7b", "gemma3:4b"], base_url="http://localhost:11434"),
     ]
 

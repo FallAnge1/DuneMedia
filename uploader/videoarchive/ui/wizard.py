@@ -363,7 +363,13 @@ class AIPage(QWizardPage):
         self.grid_host = QWidget()
         self.layout_.addWidget(self.grid_host)
         self.layout_.addWidget(link_label("Порядок сверху вниз — порядок, в котором пробуются провайдеры. "
-                                          "Названия моделей можно менять: несколько через запятую."))
+                                          "Модели — через запятую; пустое поле — программа сама найдёт "
+                                          "актуальные бесплатные vision-модели у провайдера."))
+        check = QPushButton("Проверить провайдеров")
+        check.clicked.connect(self.check)
+        self.layout_.addWidget(check)
+        self.check_status = status_label()
+        self.layout_.addWidget(self.check_status)
         self.layout_.addStretch()
         self.rows: list[tuple[AIProviderConfig, QCheckBox, QLineEdit, QLineEdit]] = []
         self._build()
@@ -415,6 +421,32 @@ class AIPage(QWizardPage):
             elif p.id != "workers_ai":
                 p.api_key = key.text().strip()
             p.models = [m.strip() for m in models.text().split(",") if m.strip()]
+
+    def check(self) -> None:
+        """Проверяет ключи и показывает доступные модели у каждого включённого провайдера."""
+        self._collect()
+        from videoarchive.ai.providers import ProviderError, build_provider
+
+        api = ApiClient(self.ctx.config.site_url, self.ctx.config.uploader_token, retries=1) if self.ctx.config.site_ready else None
+        providers = [build_provider(p, api) for p in self.ctx.config.ai_providers if p.enabled]
+
+        def go() -> list[str]:
+            lines = []
+            for prov in providers:
+                if prov is None:
+                    continue
+                if not prov.configured:
+                    lines.append(f"{prov.title}: нет ключа — пропускается")
+                    continue
+                try:
+                    lines.append(f"{prov.title}: ✓ {prov.check()}")
+                except ProviderError as err:
+                    lines.append(f"{prov.title}: ✗ {err}")
+            return lines
+
+        set_status(self.check_status, "Проверяю…")
+        run_async(go, lambda lines: set_status(self.check_status, "\n".join(lines) or "Нет включённых провайдеров"),
+                  lambda e: set_status(self.check_status, str(e), False))
 
     def _move(self, index: int, delta: int) -> None:
         self._collect()
