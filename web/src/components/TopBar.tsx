@@ -65,7 +65,7 @@ export const TopBar = forwardRef<HTMLInputElement, Props>(function TopBar(p, sea
         <input
           ref={searchRef}
           type="search"
-          placeholder="Поиск видео, фото и тегов"
+          placeholder={p.page === "boards" ? "Поиск досок" : "Поиск видео, фото и тегов"}
           value={p.filters.q}
           onChange={(e) => p.onQuery(e.target.value)}
           onKeyDown={(e) => {

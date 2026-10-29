@@ -1084,6 +1084,11 @@ textarea.input {
   font-weight: 600;
 }
 
+.boards-empty {
+  grid-column: 1 / -1;
+  padding: 24px 0;
+}
+
 .boards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
