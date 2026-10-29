@@ -948,6 +948,29 @@ textarea.input {
   background: #fff;
 }
 
+.card-dl {
+  position: absolute;
+  right: 48px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.92);
+  color: #111;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.card-dl:hover {
+  background: #fff;
+}
+
+.card-dl:active {
+  transform: scale(0.9);
+}
+
 .card-fav.is-on {
   color: var(--accent);
   opacity: 1;
@@ -965,6 +988,9 @@ textarea.input {
 .card.is-active .card-save,
 .card:hover .card-fav,
 .card.is-active .card-fav,
+.card:hover .card-dl,
+.card.is-active .card-dl,
+.card-dl:focus-visible,
 .card-save:focus-visible,
 .card-fav:focus-visible {
   opacity: 1;
