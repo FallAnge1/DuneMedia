@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { api, mediaUrl, type Collection } from "../lib/api";
 import { coverKey, prepareCover } from "../lib/image";
+import { boardMatches } from "../lib/boards";
 import { plural } from "../lib/format";
 import { useApp } from "../state";
 import { IconBack, IconEdit, IconHeart, IconImage, IconPlus } from "./Icons";
@@ -15,6 +16,8 @@ interface BoardsPageProps {
   favCovers: string[];
   total: number;
   favoritesCount: number;
+  /** Запрос из поля поиска: на странице досок оно ищет доски по названию. */
+  query: string;
   onOpen: (target: BoardTarget) => void;
   onLogin: () => void;
 }
@@ -23,27 +26,35 @@ interface BoardsPageProps {
 export function BoardsPage(p: BoardsPageProps) {
   const { editor } = useApp();
   const [dialog, setDialog] = useState<Collection | "new" | null>(null);
+  const searching = p.query.trim() !== "";
+  const boards = searching ? p.collections.filter((c) => boardMatches(c.name, p.query)) : p.collections;
+  const showAll = boardMatches("Все видео фото", p.query);
+  const showFav = boardMatches("Избранное", p.query);
 
   return (
     <section className="boards-page">
       <header className="boards-head">
         <h1>Доски</h1>
         <p className="muted">
-          {p.collections.length} {plural(p.collections.length, "доска", "доски", "досок")} · раскладывайте видео по папкам кнопкой «Сохранить»
+          {searching
+            ? `Найдено: ${boards.length} ${plural(boards.length, "доска", "доски", "досок")} из ${p.collections.length}`
+            : `${p.collections.length} ${plural(p.collections.length, "доска", "доски", "досок")} · раскладывайте видео по папкам кнопкой «Сохранить»`}
         </p>
       </header>
 
       <div className="boards-grid">
-        <BoardCard title="Все видео" count={p.total} covers={p.allCovers} onClick={() => p.onOpen("all")} />
-        <BoardCard
-          title="Избранное"
-          icon={<IconHeart size={16} filled />}
-          count={p.favoritesCount}
-          covers={p.favCovers}
-          hint="только в этом браузере"
-          onClick={() => p.onOpen("fav")}
-        />
-        {p.collections.map((c) => (
+        {showAll && <BoardCard title="Все видео" count={p.total} covers={p.allCovers} onClick={() => p.onOpen("all")} />}
+        {showFav && (
+          <BoardCard
+            title="Избранное"
+            icon={<IconHeart size={16} filled />}
+            count={p.favoritesCount}
+            covers={p.favCovers}
+            hint="только в этом браузере"
+            onClick={() => p.onOpen("fav")}
+          />
+        )}
+        {boards.map((c) => (
           <BoardCard
             key={c.id}
             title={c.emoji ? `${c.emoji} ${c.name}` : c.name}
@@ -54,7 +65,10 @@ export function BoardsPage(p: BoardsPageProps) {
             onEdit={editor ? () => setDialog(c) : undefined}
           />
         ))}
-        {editor ? (
+        {searching && boards.length === 0 && !showAll && !showFav && (
+          <p className="muted boards-empty">Досок с таким названием нет</p>
+        )}
+        {searching ? null : editor ? (
           <button type="button" className="board-card board-new" onClick={() => setDialog("new")}>
             <span className="board-cover board-cover-new">
               <IconPlus size={36} />

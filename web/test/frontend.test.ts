@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "../src/lib/api";
+import { boardMatches } from "../src/lib/boards";
 import { applyFilters, EMPTY_FILTERS, filtersFromUrl, filtersToUrl, pageFromUrl, sortVideos, type Filters } from "../src/lib/filters";
 import { buildSearchIndex, buildSearchIndexAsync, fallbackSearchIds, searchIds, stem } from "../src/lib/search";
 
@@ -145,5 +146,16 @@ describe("поиск", () => {
     expect(stem("закаты")).toBe("закат");
     expect(stem("дождь")).toBe("дожд");
     expect(stem("лес")).toBe("лес");
+  });
+});
+
+
+describe("поиск досок", () => {
+  it("каждое слово запроса — начало слова в названии, без учёта регистра и ё", () => {
+    expect(boardMatches("Живой Dubai", "жив")).toBe(true);
+    expect(boardMatches("Живой Dubai", "dub жив")).toBe(true);
+    expect(boardMatches("Живой Dubai", "убай")).toBe(false);
+    expect(boardMatches("Ёлки и снег", "елки")).toBe(true);
+    expect(boardMatches("Что угодно", "  ")).toBe(true);
   });
 });

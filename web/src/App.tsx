@@ -257,7 +257,8 @@ export function App() {
   }, []);
   const goBoards = useCallback(() => {
     setPage("boards");
-    setFilters((f) => ({ ...f, tab: "all" }));
+    // На странице досок поле поиска ищет доски, поэтому запрос по видео сбрасываем.
+    setFilters((f) => ({ ...f, tab: "all", q: "" }));
     window.scrollTo({ top: 0 });
   }, []);
   const openBoard = useCallback((target: BoardTarget) => {
@@ -296,10 +297,7 @@ export function App() {
         filters={filters}
         page={page}
         inBoard={filters.tab !== "all"}
-        onQuery={(q) => {
-          if (page === "boards") setPage("home");
-          update({ q });
-        }}
+        onQuery={(q) => update({ q })}
         onHome={goHome}
         onBoards={goBoards}
         theme={theme}
@@ -353,6 +351,7 @@ export function App() {
               favCovers={favCovers}
               total={videos.length}
               favoritesCount={favoritesCount}
+              query={filters.q}
               onOpen={openBoard}
               onLogin={() => setLoginOpen(true)}
             />
