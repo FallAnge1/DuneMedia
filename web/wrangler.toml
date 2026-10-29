@@ -1,5 +1,5 @@
 # Конфигурация Cloudflare Worker: сайт + API.
-# Перед первым деплоем замените database_id (см. docs/03-cloudflare.md).
+# database_id — база этого архива. Для своей копии проекта замените его (см. docs/03-cloudflare.md).
 
 name = "video-archive"
 main = "worker/index.ts"
@@ -15,7 +15,7 @@ run_worker_first = ["/api/*", "/media/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "video-archive"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "11ee9928-9d93-4a90-b9ed-b98cbe49c13b"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
