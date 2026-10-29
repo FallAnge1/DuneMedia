@@ -121,9 +121,61 @@ def test_openrouter_discovers_free_vision_models(frames):
 
     p = OpenRouter(AIProviderConfig("openrouter", api_key="k", models=[]), transport=httpx.MockTransport(handler))
     assert p.discover_models() == ["d/zero-vision", "a/vision:free"]
+    assert p.models() == ["d/zero-vision", "a/vision:free", "openrouter/free"]
     answer = p.ask(frames[:2], "p", "s")
-    assert sent["models"] == ["d/zero-vision", "a/vision:free", "openrouter/free"]  # массив для фолбэка внутри OpenRouter
+    assert sent["model"] == "d/zero-vision"
     assert answer.model == "d/zero-vision"
+
+
+def test_openrouter_skips_audio_and_safety_models():
+    catalog = {"data": [
+        {"id": "g/music", "pricing": {"prompt": "0", "completion": "0"},
+         "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text", "audio"]}},
+        {"id": "n/content-safety:free", "pricing": {"prompt": "0", "completion": "0"},
+         "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]}},
+        {"id": "a/vision:free", "pricing": {"prompt": "0", "completion": "0"},
+         "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]}},
+    ]}
+    p = OpenRouter(AIProviderConfig("openrouter", api_key="k"), transport=httpx.MockTransport(lambda r: httpx.Response(200, json=catalog)))
+    assert p.discover_models() == ["a/vision:free"]
+
+
+def test_openrouter_model_refusal_is_not_key_error(frames):
+    """403 «лимит ключа» или «только для агентов» — проблема модели, а не ключа: пробуем следующую."""
+    seen = []
+
+    def handler(req: httpx.Request):
+        model = json.loads(req.content)["model"]
+        seen.append(model)
+        if model == "paid":
+            return httpx.Response(403, json={"error": {"message": "Key limit exceeded (total limit). Raise this API key's usage limit"}})
+        if model == "gated":
+            return httpx.Response(403, json={"error": {"message": "gated is only available on agentic harnesses"}})
+        if model == "empty":
+            return openai_reply("", model)
+        return openai_reply(json.dumps(GOOD), model)
+
+    p = OpenRouter(AIProviderConfig("openrouter", api_key="k", models=["paid", "gated", "empty", "ok"]), transport=httpx.MockTransport(handler))
+    assert p.ask(frames[:1], "p", "s").model == "ok"
+    assert seen == ["paid", "gated", "empty", "ok"]
+
+
+def test_renamed_models_fall_back_to_discovered(frames):
+    """Модели из настроек пропали у провайдера — программа берёт актуальные из его списка."""
+    seen = []
+
+    def handler(req: httpx.Request):
+        if req.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "qwen/qwen3.8-27b"}, {"id": "whisper-large-v3"}]})
+        model = json.loads(req.content)["model"]
+        seen.append(model)
+        if model.startswith("old"):
+            return httpx.Response(404, json={"error": {"message": f"The model `{model}` does not exist"}})
+        return openai_reply(json.dumps(GOOD), model)
+
+    p = Groq(AIProviderConfig("groq", api_key="k", models=["old-a", "old-b"]), transport=httpx.MockTransport(handler))
+    assert p.ask(frames[:1], "p", "s").model == "qwen/qwen3.8-27b"
+    assert seen == ["old-a", "old-b", "qwen/qwen3.8-27b"]
 
 
 def test_gemini_request(frames):
