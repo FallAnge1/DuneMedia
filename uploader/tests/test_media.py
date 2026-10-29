@@ -116,3 +116,25 @@ def test_broken_file(tmp_path):
     bad.write_bytes(b"not a video at all")
     with pytest.raises(MediaError):
         media.probe(bad)
+
+
+def test_photo_probe_respects_exif_rotation(photos):
+    info = media.probe_photo(photos["rotated"])
+    assert (info.width, info.height, info.orientation) == (600, 800, "vertical")
+    assert info.duration is None and info.fps is None
+    png = media.probe_photo(photos["png"])
+    assert (png.width, png.height, png.orientation) == (1280, 720, "horizontal")
+
+
+def test_photo_poster_and_ai_frame(photos, tmp_path):
+    info = media.probe_photo(photos["rotated"])
+    poster = media.make_photo_poster(photos["rotated"], tmp_path / "poster.jpg", info)
+    assert media.probe_photo(poster).width == 600  # маленькое фото не увеличиваем, поворот учтён
+    frames = media.extract_photo_ai_frame(photos["rotated"], tmp_path, info)
+    assert len(frames) == 1 and frames[0].exists()
+
+
+def test_media_extensions():
+    assert media.is_photo("a/IMG_1.HEIC") and media.is_photo("b.jpeg")
+    assert not media.is_photo("clip.mov")
+    assert {".mp4", ".jpg"} <= media.MEDIA_EXTENSIONS

@@ -2,6 +2,7 @@
 
 export type Orientation = "horizontal" | "vertical" | "square";
 export type ResolutionLabel = "SD" | "HD" | "FullHD" | "2K" | "4K" | "8K";
+export type MediaType = "video" | "photo";
 
 export interface Video {
   id: string;
@@ -20,6 +21,8 @@ export interface Video {
   codec: string | null;
   preview_key: string | null;
   poster_key: string | null;
+  /** У фото нет превью-ролика, длительности и fps; постер — уменьшенная копия снимка. */
+  media_type: MediaType;
   uploaded_by: string | null;
   caption_dirty: number;
   created_at: number;

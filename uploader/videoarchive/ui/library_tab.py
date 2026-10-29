@@ -68,7 +68,7 @@ class LibraryModel(QAbstractTableModel):
             if col == 2:
                 return ", ".join(self.collections.get(c, "?") for c in v["collections"])
             if col == 3:
-                return format_duration(v.get("duration"))
+                return "фото" if v.get("media_type") == "photo" else format_duration(v.get("duration"))
             if col == 4:
                 return f"{v.get('resolution_label') or ''} {v.get('width')}×{v.get('height')}" if v.get("width") else "—"
             if col == 5:
@@ -116,7 +116,7 @@ class VideoEditDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.video = video
-        self.setWindowTitle("Изменить видео")
+        self.setWindowTitle("Изменить фото" if video.get("media_type") == "photo" else "Изменить видео")
         self.setMinimumWidth(560)
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -124,9 +124,10 @@ class VideoEditDialog(QDialog):
         self.poster.setFixedSize(200, 120)
         self.poster.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top.addWidget(self.poster)
+        length = "фото" if video.get("media_type") == "photo" else format_duration(video.get("duration"))
         info = QLabel(
             f"Пост: t.me/{video['tg_channel']}/{video['tg_message_id']}\n"
-            f"{video.get('file_name') or ''}\n{format_duration(video.get('duration'))} · "
+            f"{video.get('file_name') or ''}\n{length} · "
             f"{video.get('resolution_label') or ''} · {format_size(video.get('file_size') or 0)}"
         )
         info.setObjectName("muted")

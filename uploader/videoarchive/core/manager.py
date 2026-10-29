@@ -1,4 +1,4 @@
-"""Очередь в работе: подготовка файлов в фоне (2 потока) и последовательная загрузка.
+"""Очередь в работе: подготовка файлов (видео и фото) в фоне (2 потока) и последовательная загрузка.
 
 Пока одно видео уходит в Telegram, превью и ИИ-теги для следующих уже готовятся.
 """
@@ -11,24 +11,20 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
+from videoarchive.core.media import MEDIA_EXTENSIONS, PHOTO_EXTENSIONS, VIDEO_EXTENSIONS  # noqa: F401 — реэкспорт
 from videoarchive.core.pipeline import Pipeline
 from videoarchive.core.queue import DONE, ERROR, NEW, PREPARING, QUEUED, READY, SKIPPED, UPLOADING, QueueItem, QueueStore
 from videoarchive.core.textutil import clean_title
 
 log = logging.getLogger(__name__)
 
-VIDEO_EXTENSIONS = {
-    ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts", ".m2ts", ".mxf", ".wmv", ".flv", ".3gp", ".mpg", ".mpeg", ".ts", ".r3d", ".braw",
-}
-
-
 def expand_paths(paths: Iterable[Path]) -> list[Path]:
-    """Файлы и папки → список видеофайлов (папки обходятся рекурсивно, скрытые файлы пропускаются)."""
+    """Файлы и папки → список видео и фото (папки обходятся рекурсивно, скрытые файлы пропускаются)."""
     out: list[Path] = []
     for p in paths:
         if p.is_dir():
             for f in sorted(p.rglob("*")):
-                if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS and not f.name.startswith("."):
+                if f.is_file() and f.suffix.lower() in MEDIA_EXTENSIONS and not f.name.startswith("."):
                     out.append(f)
         elif p.is_file():
             out.append(p)
@@ -62,8 +58,8 @@ class UploadManager:
         skipped: list[str] = []
         for path in expand_paths(paths):
             resolved = str(path.resolve())
-            if path.suffix.lower() not in VIDEO_EXTENSIONS:
-                skipped.append(f"{path.name}: не похоже на видео")
+            if path.suffix.lower() not in MEDIA_EXTENSIONS:
+                skipped.append(f"{path.name}: не похоже на видео или фото")
                 continue
             if self.store.find_by_path(resolved):
                 skipped.append(f"{path.name}: уже в очереди")

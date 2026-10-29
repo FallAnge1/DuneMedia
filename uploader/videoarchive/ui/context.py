@@ -61,6 +61,7 @@ class AppContext(QObject):
             channel=self.config.channel,
             tagger=self.tagger(),
             ai_auto=self.config.ai_auto,
+            ai_auto_apply=self.config.ai_auto_apply,
             existing_tags=lambda: [t["name"] for t in self.tags],
             notify=self.item_changed.emit,
         )
@@ -79,7 +80,8 @@ class AppContext(QObject):
             if self.telegram is None:
                 if not (self.config.api_id and self.config.api_hash):
                     raise TelegramError("Не указаны api_id и api_hash (Настройки)")
-                self.telegram = TelegramService(session_path(), int(self.config.api_id), self.config.api_hash)
+                self.telegram = TelegramService(session_path(), int(self.config.api_id), self.config.api_hash,
+                                                upload_connections=self.config.upload_connections)
             return self.telegram
 
     def reset_telegram(self) -> None:

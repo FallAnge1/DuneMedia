@@ -22,7 +22,7 @@ const VIDEO_JSON = `json_object(
   'id', v.id, 'tg_channel', v.tg_channel, 'tg_message_id', v.tg_message_id, 'title', v.title,
   'description', v.description, 'file_name', v.file_name, 'file_size', v.file_size, 'duration', v.duration,
   'width', v.width, 'height', v.height, 'orientation', v.orientation, 'resolution_label', v.resolution_label,
-  'fps', v.fps, 'codec', v.codec, 'preview_key', v.preview_key, 'poster_key', v.poster_key,
+  'fps', v.fps, 'codec', v.codec, 'preview_key', v.preview_key, 'poster_key', v.poster_key, 'media_type', v.media_type,
   'uploaded_by', v.uploaded_by, 'caption_dirty', v.caption_dirty, 'created_at', v.created_at, 'updated_at', v.updated_at,
   'tags', json((SELECT json_group_array(name) FROM (
     SELECT t.name FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE vt.video_id = v.id ORDER BY t.name))),

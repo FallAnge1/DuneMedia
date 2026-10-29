@@ -23,6 +23,7 @@ function video(over: Partial<Video>): Video {
     codec: "h264",
     preview_key: null,
     poster_key: null,
+    media_type: "video",
     uploaded_by: null,
     caption_dirty: 0,
     created_at: n,
@@ -58,6 +59,21 @@ describe("фильтры", () => {
     expect(titles(applyFilters(videos, { ...EMPTY_FILTERS, tab: "fav" }, fav))).toEqual(["Ночной город"]);
   });
 
+  it("фильтр «Тип»: видео и фото; у фото нет длительности", () => {
+    const mixed = [
+      ...videos,
+      video({ title: "Портрет у окна", media_type: "photo", duration: null, fps: null, tags: ["закат"] }),
+    ];
+    const ctx = { searchIds: null, favorites: new Set<string>() };
+    const photos = applyFilters(mixed, { ...EMPTY_FILTERS, media: ["photo"] }, ctx);
+    expect(photos.map((v) => v.title)).toEqual(["Портрет у окна"]);
+    expect(applyFilters(mixed, { ...EMPTY_FILTERS, media: ["video"] }, ctx)).toHaveLength(videos.length);
+    // «до 10 с» не должен ловить фото, у которых длительности нет
+    const short = applyFilters(mixed, { ...EMPTY_FILTERS, duration: ["lt10"] }, ctx);
+    expect(short.map((v) => v.title)).not.toContain("Портрет у окна");
+    expect(filtersFromUrl("?m=photo,bogus").media).toEqual(["photo"]);
+  });
+
   it("сортировка", () => {
     expect(sortVideos(videos, "long")[0]!.title).toBe("Водопад в горах");
     expect(sortVideos(videos, "short")[0]!.title).toBe("Закат над морем");
@@ -69,6 +85,7 @@ describe("фильтры", () => {
     const f: Filters = {
       q: "закат",
       tags: ["крупный план", "a,b"],
+      media: ["photo"],
       orientation: ["vertical", "square"],
       resolution: ["4K"],
       duration: ["10to30"],

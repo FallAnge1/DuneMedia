@@ -1,13 +1,17 @@
-import type { Orientation, ResolutionLabel, Video } from "./api";
+import type { MediaType, Orientation, ResolutionLabel, Video } from "./api";
 
 export type DurationBucket = "lt10" | "10to30" | "30to60" | "gt60";
 export type SortKey = "new" | "old" | "long" | "short" | "size" | "name";
 /** Вкладка: все, избранное или id коллекции. */
 export type CollectionTab = "all" | "fav" | number;
 
+/** Группы фильтров с флажками (теги и поиск устроены иначе). */
+export type FilterGroup = "media" | "orientation" | "resolution" | "duration";
+
 export interface Filters {
   q: string;
   tags: string[];
+  media: MediaType[];
   orientation: Orientation[];
   resolution: ResolutionLabel[];
   duration: DurationBucket[];
@@ -18,12 +22,18 @@ export interface Filters {
 export const EMPTY_FILTERS: Filters = {
   q: "",
   tags: [],
+  media: [],
   orientation: [],
   resolution: [],
   duration: [],
   tab: "all",
   sort: "new",
 };
+
+export const MEDIA_TYPES: { value: MediaType; label: string }[] = [
+  { value: "video", label: "Видео" },
+  { value: "photo", label: "Фото" },
+];
 
 export const ORIENTATIONS: { value: Orientation; label: string }[] = [
   { value: "horizontal", label: "Горизонтальные" },
@@ -64,6 +74,7 @@ export function filtersFromUrl(search: string): Filters {
   return {
     q: p.get("q") ?? "",
     tags: p.getAll("tag").filter(Boolean),
+    media: list(p, "m").filter((x): x is MediaType => MEDIA_TYPES.some((m) => m.value === x)),
     orientation: list(p, "o").filter((x): x is Orientation => ORIENTATIONS.some((o) => o.value === x)),
     resolution: list(p, "r").filter((x): x is ResolutionLabel => RESOLUTIONS.includes(x as ResolutionLabel)),
     duration: list(p, "d").filter((x): x is DurationBucket => DURATIONS.some((d) => d.value === x)),
@@ -85,6 +96,7 @@ export function filtersToUrl(f: Filters, openVideoId: string | null, page: Page 
   if (f.tab !== "all") p.set("c", String(f.tab));
   // Теги могут содержать запятые и пробелы, поэтому каждый — отдельным параметром.
   for (const tag of f.tags) p.append("tag", tag);
+  if (f.media.length) p.set("m", f.media.join(","));
   if (f.orientation.length) p.set("o", f.orientation.join(","));
   if (f.resolution.length) p.set("r", f.resolution.join(","));
   if (f.duration.length) p.set("d", f.duration.join(","));
@@ -95,7 +107,7 @@ export function filtersToUrl(f: Filters, openVideoId: string | null, page: Page 
 }
 
 export const hasActiveFilters = (f: Filters) =>
-  !!f.q || f.tags.length > 0 || f.orientation.length > 0 || f.resolution.length > 0 || f.duration.length > 0;
+  !!f.q || f.tags.length > 0 || f.media.length > 0 || f.orientation.length > 0 || f.resolution.length > 0 || f.duration.length > 0;
 
 // ---- Применение ----
 
@@ -110,9 +122,11 @@ export function applyFilters(
     if (f.tab === "fav" && !ctx.favorites.has(v.id)) return false;
     if (typeof f.tab === "number" && !v.collections.includes(f.tab)) return false;
     if (ctx.searchIds && !ctx.searchIds.has(v.id)) return false;
+    if (f.media.length && !f.media.includes(v.media_type ?? "video")) return false;
     if (f.orientation.length && (!v.orientation || !f.orientation.includes(v.orientation))) return false;
     if (f.resolution.length && (!v.resolution_label || !f.resolution.includes(v.resolution_label))) return false;
     if (f.duration.length) {
+      if (v.media_type === "photo") return false; // у фото нет длительности
       const d = v.duration ?? 0;
       if (!f.duration.some((b) => DURATIONS.find((x) => x.value === b)!.test(d))) return false;
     }

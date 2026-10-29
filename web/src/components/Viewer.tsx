@@ -93,10 +93,10 @@ export function Viewer(p: Props) {
           </div>
           {p.total > 1 && p.position >= 0 && (
             <>
-              <button type="button" className="viewer-nav prev" onClick={p.onPrev} aria-label="Предыдущее видео (←)">
+              <button type="button" className="viewer-nav prev" onClick={p.onPrev} aria-label="Предыдущее (←)">
                 <IconChevronLeft size={28} />
               </button>
-              <button type="button" className="viewer-nav next" onClick={p.onNext} aria-label="Следующее видео (→)">
+              <button type="button" className="viewer-nav next" onClick={p.onNext} aria-label="Следующее (→)">
                 <IconChevronRight size={28} />
               </button>
             </>
@@ -184,15 +184,28 @@ export function Viewer(p: Props) {
               )}
 
               <dl className="meta">
-                <dt>Длительность</dt>
-                <dd>{formatDuration(v.duration)}</dd>
+                {v.media_type === "photo" ? (
+                  <>
+                    <dt>Тип</dt>
+                    <dd>Фото</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>Длительность</dt>
+                    <dd>{formatDuration(v.duration)}</dd>
+                  </>
+                )}
                 <dt>Разрешение</dt>
                 <dd>
                   {v.width && v.height ? `${v.width}×${v.height}` : "—"} {v.resolution_label && <span className="badge">{v.resolution_label}</span>}{" "}
                   <OrientationIcon orientation={v.orientation} />
                 </dd>
-                <dt>Частота кадров</dt>
-                <dd>{formatFps(v.fps)}</dd>
+                {v.media_type !== "photo" && (
+                  <>
+                    <dt>Частота кадров</dt>
+                    <dd>{formatFps(v.fps)}</dd>
+                  </>
+                )}
                 <dt>Размер файла</dt>
                 <dd>{formatSize(v.file_size)}</dd>
                 {v.codec && (
@@ -228,7 +241,7 @@ export function Viewer(p: Props) {
 
               {p.similar.length > 0 && (
                 <div className="similar">
-                  <h3>Похожие видео</h3>
+                  <h3>Похожее</h3>
                   <div className="similar-grid">
                     {p.similar.map((s) => (
                       <button key={s.id} type="button" className="similar-item" onClick={() => p.onOpenSimilar(s.id)} title={s.title}>

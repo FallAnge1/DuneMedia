@@ -2,6 +2,14 @@ import { badRequest } from "./http";
 
 export type Orientation = "horizontal" | "vertical" | "square";
 export type ResolutionLabel = "SD" | "HD" | "FullHD" | "2K" | "4K" | "8K";
+export type MediaType = "video" | "photo";
+
+export function optMediaType(body: Record<string, unknown>, key = "media_type"): MediaType | undefined {
+  const v = body[key];
+  if (v === undefined || v === null) return undefined;
+  if (v !== "video" && v !== "photo") throw badRequest(`Поле «${key}» должно быть "video" или "photo"`);
+  return v;
+}
 
 export const MAX_TAG_LENGTH = 64;
 export const MAX_TAGS_PER_VIDEO = 60;

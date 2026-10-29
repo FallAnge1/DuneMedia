@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QListView, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from videoarchive.core.manager import VIDEO_EXTENSIONS
-from videoarchive.core.pipeline import format_size
+from videoarchive.core.manager import PHOTO_EXTENSIONS, VIDEO_EXTENSIONS
+from videoarchive.core.pipeline import format_size, suggestion_fields
 from videoarchive.core.queue import DONE, ERROR, QUEUED, UPLOADING, QueueItem
 from videoarchive.core.textutil import normalize_tags
 from videoarchive.ui.context import AppContext
@@ -139,7 +139,9 @@ class ItemEditor(QWidget):
         self.header.setText(item.title or item.file_name)
         info = item.info or {}
         meta = [item.path, format_size(item.file_size)]
-        if info:
+        if info and item.is_photo:
+            meta += ["фото", f"{info.get('width')}×{info.get('height')}", info.get("codec") or ""]
+        elif info:
             meta += [
                 format_duration(info.get("duration")),
                 f"{info.get('width')}×{info.get('height')} ({info.get('resolution_label')})",
@@ -168,7 +170,8 @@ class ItemEditor(QWidget):
         if item.duplicates:
             where = {"site": "на сайте", "queue": "в очереди"}
             lines = [f"«{d['title']}» ({where.get(d['where'], '')})" for d in item.duplicates[:3]]
-            self.dup_banner.label.setText("⚠ Такое видео уже есть: " + ", ".join(lines))
+            what = "фото" if item.is_photo else "видео"
+            self.dup_banner.label.setText(f"⚠ Такое {what} уже есть: " + ", ".join(lines))
             self.dup_check.blockSignals(True)
             self.dup_check.setChecked(item.allow_duplicate)
             self.dup_check.blockSignals(False)
@@ -212,15 +215,7 @@ class ItemEditor(QWidget):
         item = self.item()
         if not item or not item.ai_suggestion:
             return
-        s = item.ai_suggestion
-        fields: dict[str, object] = {}
-        if title and s.get("title"):
-            fields["title"] = s["title"]
-        if description and s.get("description"):
-            fields["description"] = s["description"]
-        if tags:
-            fields["tags"] = normalize_tags(item.tags + list(s.get("tags", [])))
-        self.ctx.store.update(item.id, **fields)
+        self.ctx.store.update(item.id, **suggestion_fields(item, title=title, description=description, tags=tags))
         self.ctx.item_changed.emit(item.id)
 
     def _new_collection(self) -> None:
@@ -278,12 +273,19 @@ class BulkEditor(QWidget):
         layout.addLayout(row)
 
         layout.addWidget(section_label("ИИ"))
-        ai = QPushButton("✨ Предложить теги для всех выбранных")
+        ai = QPushButton("✨ Предложить название, описание и теги для выбранных")
         ai.clicked.connect(self._ai_all)
         layout.addWidget(ai)
-        apply_ai = QPushButton("Добавить предложенные ИИ теги")
-        apply_ai.clicked.connect(self._apply_ai_tags)
+        self.ai_count = QLabel()
+        self.ai_count.setObjectName("muted")
+        layout.addWidget(self.ai_count)
+        apply_ai = QPushButton("Применить предложения ИИ: название, описание и теги")
+        apply_ai.clicked.connect(self._apply_ai_all)
         layout.addWidget(apply_ai)
+        apply_tags = QPushButton("Добавить только теги ИИ")
+        apply_tags.setFlat(True)
+        apply_tags.clicked.connect(self._apply_ai_tags)
+        layout.addWidget(apply_tags)
 
         layout.addWidget(section_label("Загрузка"))
         upload = QPushButton("Загрузить выбранные")
@@ -292,6 +294,20 @@ class BulkEditor(QWidget):
         layout.addWidget(upload)
         layout.addStretch()
         ctx.catalog_changed.connect(self.refresh)
+        ctx.item_changed.connect(self._on_item_changed)
+
+    def _on_item_changed(self, item_id: str) -> None:
+        if self.isVisible() and item_id in self.selected_ids():
+            self._update_ai_count()
+
+    def _update_ai_count(self) -> None:
+        items = self.items()
+        with_ai = sum(1 for i in items if i.ai_suggestion)
+        thinking = sum(1 for i in items if i.stage == "ai")
+        text = f"Предложения ИИ есть у {with_ai} из {len(items)}"
+        if thinking:
+            text += f" · ИИ думает: {thinking}"
+        self.ai_count.setText(text)
 
     def items(self) -> list[QueueItem]:
         return [i for i in (self.ctx.store.get(x) for x in self.selected_ids()) if i and i.status not in LOCKED]
@@ -299,6 +315,7 @@ class BulkEditor(QWidget):
     def refresh(self) -> None:
         ids = self.selected_ids()
         self.header.setText(f"Выбрано файлов: {len(ids)}")
+        self._update_ai_count()
         self.tags.set_suggestions([t["name"] for t in self.ctx.tags])
         present = sorted({t for i in self.items() for t in i.tags})
         self.remove_tag.clear()
@@ -344,8 +361,14 @@ class BulkEditor(QWidget):
             if item.info:
                 self.ctx.manager.suggest_tags(item.id)
 
+    def _apply_ai_all(self) -> None:
+        missing = sum(1 for i in self.items() if not i.ai_suggestion)
+        self._each(lambda i: suggestion_fields(i) if i.ai_suggestion else None)
+        if missing:
+            self.ctx.message.emit(f"У {missing} файлов ещё нет предложения ИИ — нажмите «Предложить…» и примените ещё раз")
+
     def _apply_ai_tags(self) -> None:
-        self._each(lambda i: {"tags": normalize_tags(i.tags + i.ai_suggestion.get("tags", []))} if i.ai_suggestion else None)
+        self._each(lambda i: suggestion_fields(i, title=False, description=False) if i.ai_suggestion else None)
 
 
 class UploadTab(QWidget):
@@ -369,7 +392,10 @@ class UploadTab(QWidget):
         clear.clicked.connect(self.ctx.manager.clear_done)
         remove = QPushButton("Удалить из очереди")
         remove.clicked.connect(self.remove_selected)
-        for w in (add_files, add_folder, retry, clear, remove):
+        select_all = QPushButton("Выделить всё")
+        select_all.setToolTip("Выделить все файлы в очереди (Ctrl+A)")
+        select_all.clicked.connect(self.select_all)
+        for w in (add_files, add_folder, select_all, retry, clear, remove):
             toolbar.addWidget(w)
         toolbar.addStretch()
         self.summary = QLabel()
@@ -385,7 +411,7 @@ class UploadTab(QWidget):
 
         splitter = QSplitter()
         left = QStackedWidget()
-        self.drop_hint = QLabel("Перетащите сюда видео или папки\nили нажмите «Добавить файлы…»")
+        self.drop_hint = QLabel("Перетащите сюда видео, фото или папки\nили нажмите «Добавить файлы…»")
         self.drop_hint.setObjectName("drop")
         self.drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.addWidget(self.drop_hint)
@@ -405,7 +431,7 @@ class UploadTab(QWidget):
 
         self.editor_stack = QStackedWidget()
         empty = QLabel("Выберите файл в списке, чтобы изменить название, теги и коллекции.\n"
-                       "Выделите несколько (Ctrl/Shift), чтобы изменить их разом.")
+                       "Выделите несколько (Ctrl/Shift) или все (Ctrl+A, «Выделить всё»), чтобы изменить их разом.")
         empty.setObjectName("muted")
         empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty.setWordWrap(True)
@@ -430,6 +456,10 @@ class UploadTab(QWidget):
         self._on_queue_changed()
 
     # ---- очередь ----
+
+    def select_all(self) -> None:
+        self.view.selectAll()
+        self.view.setFocus()
 
     def selected_ids(self) -> list[str]:
         return [self.model.ids[i.row()] for i in self.view.selectionModel().selectedRows()]
@@ -484,13 +514,17 @@ class UploadTab(QWidget):
             self.ctx.message.emit(f"Пропущено: {len(skipped)} — " + "; ".join(skipped[:3]))
 
     def choose_files(self) -> None:
-        exts = " ".join(f"*{e}" for e in sorted(VIDEO_EXTENSIONS))
-        files, _ = QFileDialog.getOpenFileNames(self, "Выберите видео", "", f"Видео ({exts});;Все файлы (*)")
+        videos = " ".join(f"*{e}" for e in sorted(VIDEO_EXTENSIONS))
+        photos = " ".join(f"*{e}" for e in sorted(PHOTO_EXTENSIONS))
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Выберите видео и фото", "",
+            f"Видео и фото ({videos} {photos});;Видео ({videos});;Фото ({photos});;Все файлы (*)",
+        )
         if files:
             self.add_paths([Path(f) for f in files])
 
     def choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку с видео")
+        folder = QFileDialog.getExistingDirectory(self, "Выберите папку с видео и фото")
         if folder:
             self.add_paths([Path(folder)])
 

@@ -369,8 +369,11 @@ class AIPage(QWizardPage):
         self.enabled.setChecked(ctx.config.ai_enabled)
         self.auto = QCheckBox("Предлагать теги автоматически при добавлении файлов")
         self.auto.setChecked(ctx.config.ai_auto)
+        self.auto_apply = QCheckBox("Сразу применять предложение ИИ: название, описание и теги")
+        self.auto_apply.setChecked(ctx.config.ai_auto_apply)
         self.layout_.addWidget(self.enabled)
         self.layout_.addWidget(self.auto)
+        self.layout_.addWidget(self.auto_apply)
         self.grid_host = QWidget()
         self.layout_.addWidget(self.grid_host)
         self.layout_.addWidget(link_label("Порядок сверху вниз — порядок, в котором пробуются провайдеры. "
@@ -471,6 +474,7 @@ class AIPage(QWizardPage):
         self._collect()
         self.ctx.config.ai_enabled = self.enabled.isChecked()
         self.ctx.config.ai_auto = self.auto.isChecked()
+        self.ctx.config.ai_auto_apply = self.auto_apply.isChecked()
         self.ctx.config.save()
         return True
 

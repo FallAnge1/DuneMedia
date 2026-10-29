@@ -1,6 +1,16 @@
 import { useMemo, useState } from "react";
 import type { Orientation, ResolutionLabel } from "../lib/api";
-import { DURATIONS, ORIENTATIONS, RESOLUTIONS, SORTS, type DurationBucket, type Filters, type SortKey } from "../lib/filters";
+import {
+  DURATIONS,
+  MEDIA_TYPES,
+  ORIENTATIONS,
+  RESOLUTIONS,
+  SORTS,
+  type DurationBucket,
+  type FilterGroup,
+  type Filters,
+  type SortKey,
+} from "../lib/filters";
 import { IconClose, OrientationIcon } from "./Icons";
 
 interface Props {
@@ -11,12 +21,13 @@ interface Props {
   tagCounts: Map<string, number>;
   /** Сколько видео в выдаче по каждому значению — чтобы показать рядом с вариантом. */
   facetCounts: {
+    media: Map<string, number>;
     orientation: Map<string, number>;
     resolution: Map<string, number>;
     duration: Map<string, number>;
   };
   onToggleTag: (tag: string) => void;
-  onToggle: (group: "orientation" | "resolution" | "duration", value: string) => void;
+  onToggle: (group: FilterGroup, value: string) => void;
   onReset: () => void;
   hasActive: boolean;
   onSort: (sort: SortKey) => void;
@@ -106,6 +117,22 @@ export function FilterPanel(p: Props) {
           )}
           {p.filters.tags.length > 1 && <p className="muted small">Показываются видео со всеми выбранными тегами</p>}
         </section>
+
+        {(p.facetCounts.media.get("photo") ?? 0) + p.filters.media.length > 0 && (
+          <section className="filter-group">
+            <h3>Тип</h3>
+            {MEDIA_TYPES.map((m) => (
+              <Check
+                key={m.value}
+                checked={p.filters.media.includes(m.value)}
+                onChange={() => p.onToggle("media", m.value)}
+                count={p.facetCounts.media.get(m.value) ?? 0}
+              >
+                {m.label}
+              </Check>
+            ))}
+          </section>
+        )}
 
         <section className="filter-group">
           <h3>Ориентация</h3>

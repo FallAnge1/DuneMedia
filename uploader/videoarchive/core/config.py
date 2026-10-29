@@ -58,11 +58,13 @@ class Config:
     # ИИ
     ai_enabled: bool = True
     ai_auto: bool = False  # предлагать теги автоматически при добавлении файла
+    ai_auto_apply: bool = False  # сразу подставлять предложение ИИ: название, описание и теги
     ai_providers: list[AIProviderConfig] = field(default_factory=default_ai_providers)
     ai_requests_per_minute: int = 20
     # Прочее
     setup_done: bool = False
     auto_resume: bool = True
+    upload_connections: int = 8  # параллельных соединений при загрузке в Telegram (1 — по-старому)
 
     @property
     def telegram_ready(self) -> bool:

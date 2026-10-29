@@ -8,7 +8,7 @@ import pytest
 
 from tests.fakes import FakeApi, FakeTelegram, flood, net_error
 from videoarchive.core.manager import UploadManager
-from videoarchive.core.pipeline import Pipeline, Suggestion
+from videoarchive.core.pipeline import Pipeline, Suggestion, suggestion_fields
 from videoarchive.core.queue import DONE, ERROR, QUEUED, READY, QueueItem, QueueStore
 from videoarchive.core.telegram import TelegramConnectionError
 from videoarchive.core.textutil import clean_title
@@ -166,6 +166,25 @@ def test_ai_suggestion_is_not_applied_silently(videos):
     assert item.title == "Vertical" and item.tags == []  # пользователь применяет сам
 
 
+def test_ai_auto_apply(videos):
+    """Настройка «сразу применять»: название и описание заменяются, теги добавляются к стоящим."""
+    store, tagger = QueueStore(), FakeTagger()
+    p = make(store, tagger=tagger, ai_auto=True, ai_auto_apply=True)
+    item = add(store, videos["vertical"], tags=["мой тег"])
+    p.prepare(item.id)
+    item = store.get(item.id)
+    assert (item.title, item.description) == ("ИИ-название", "Описание")
+    assert item.tags == ["мой тег", "закат"]
+
+
+def test_suggestion_fields_partial():
+    item = QueueItem(path="x.mp4", title="Старое", description="", tags=["а"],
+                     ai_suggestion={"title": "Новое", "description": "Опис", "tags": ["б", "а"]})
+    assert suggestion_fields(item) == {"title": "Новое", "description": "Опис", "tags": ["а", "б"]}
+    assert suggestion_fields(item, title=False, description=False) == {"tags": ["а", "б"]}
+    assert suggestion_fields(QueueItem(path="x.mp4")) == {}
+
+
 def test_manager_end_to_end(videos, tmp_path):
     store, tg, api = QueueStore(), FakeTelegram(), FakeApi()
     p = make(store, tg, api)
@@ -204,3 +223,44 @@ def test_queue_survives_restart(videos):
     assert [i.id for i in reloaded.unfinished_uploads()] == [item.id]
     # прогресс не сохраняется
     assert "progress" not in r.to_dict()
+
+
+def test_photo_upload(photos):
+    store, tg, api = QueueStore(), FakeTelegram(), FakeApi()
+    tagger = FakePhotoTagger()
+    p = make(store, tg, api, tagger=tagger, ai_auto=True)
+    item = add(store, photos["rotated"])
+    assert item.is_photo and item.media_type == "photo"
+    p.prepare(item.id)
+    item = store.get(item.id)
+    assert item.status == READY and item.prepared and item.preview_path is None
+    assert tagger.frames == 1
+    p.upload(item.id)
+    item = store.get(item.id)
+    assert item.status == DONE, item.error
+    video = api.videos[item.id]
+    assert video["media_type"] == "photo" and video["preview_key"] is None and video["duration"] is None
+    assert (video["width"], video["height"]) == (600, 800)
+    assert [k.split("/")[0] for k in api.media] == ["posters"]
+    assert tg.sent[0]["file_name"] == "IMG_1234.jpg"
+
+
+class FakePhotoTagger:
+    def __init__(self):
+        self.frames = 0
+
+    def suggest(self, frames, file_name, existing_tags):
+        self.frames = len(frames)
+        return Suggestion(title="Фото", description="", tags=["портрет"], provider="groq", model="m")
+
+
+def test_manager_accepts_photos(photos, videos, tmp_path):
+    store = QueueStore()
+    manager = UploadManager(store, make(store))
+    try:
+        (tmp_path / "notes.txt").write_text("x")
+        added, skipped = manager.add_paths([photos["png"], videos["short"], tmp_path / "notes.txt"])
+        assert [i.file_name for i in added] == ["Скриншот_экрана.png", "short_clip.mp4"]
+        assert skipped == ["notes.txt: не похоже на видео или фото"]
+    finally:
+        manager.shutdown()

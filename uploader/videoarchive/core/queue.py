@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from videoarchive.core.config import write_json_atomic
+from videoarchive.core.media import is_photo
 from videoarchive.core.paths import data_dir, work_dir
 
 log = logging.getLogger(__name__)
@@ -87,8 +88,17 @@ class QueueItem:
         return Path(self.path)
 
     @property
+    def is_photo(self) -> bool:
+        return is_photo(self.path)
+
+    @property
+    def media_type(self) -> str:
+        return "photo" if self.is_photo else "video"
+
+    @property
     def prepared(self) -> bool:
-        return bool(self.info and self.preview_path and self.poster_path and self.thumb_path)
+        has_preview = self.is_photo or bool(self.preview_path)  # у фото превью-ролика нет
+        return bool(self.info and has_preview and self.poster_path and self.thumb_path)
 
     @property
     def is_duplicate(self) -> bool:
