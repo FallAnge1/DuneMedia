@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from videoarchive.ai.normalize import InvalidAnswer, extract_json, normalize_answer
 from videoarchive.ai.providers import Provider, ProviderError, RateLimited, build_provider
 from videoarchive.core.config import Config, write_json_atomic
+from videoarchive.core.media import is_photo
 from videoarchive.core.paths import data_dir, find_tool
 from videoarchive.core.pipeline import Suggestion
 
@@ -28,18 +29,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "Ты помогаешь вести каталог видеоархива. Тебе показывают кадры из одного видео. "
+    "Ты помогаешь вести каталог архива видео и фото. Тебе показывают кадры из одного видео или одну фотографию. "
     "Отвечай ТОЛЬКО JSON-объектом без пояснений и без markdown."
 )
 
-PROMPT_TEMPLATE = """Кадры взяты из разных моментов одного видео (по порядку).
+PROMPT_TEMPLATE = """{source}
 Имя файла: {file_name}
 
 Верни JSON строго такого вида:
 {{"title": "...", "description": "...", "tags": ["...", "..."]}}
 
 Правила:
-- title — короткое название на русском, 2–6 слов, без кавычек и без слова «видео».
+- title — короткое название на русском, 2–6 слов, без кавычек и без слов «видео» и «фото».
 - description — 1–2 предложения на русском: что происходит в кадре.
 - tags — от 5 до 12 тегов на русском, в нижнем регистре, без #, по 1–3 слова:
   объекты, место, время суток, погода, тип съёмки (дрон, таймлапс, слоумо, крупный план, статика, ручная камера),
@@ -54,11 +55,16 @@ class AIError(Exception):
     pass
 
 
+VIDEO_SOURCE = "Кадры взяты из разных моментов одного видео (по порядку)."
+PHOTO_SOURCE = "Это одна фотография (тип съёмки для неё — например, портрет, пейзаж, дрон, крупный план, макро)."
+
+
 def build_prompt(file_name: str, existing: list[str]) -> str:
     block = ""
     if existing:
         block = "\nСуществующие теги архива (самые частые): " + ", ".join(existing[:MAX_EXISTING_TAGS])
-    return PROMPT_TEMPLATE.format(file_name=file_name, existing_block=block)
+    source = PHOTO_SOURCE if is_photo(file_name) else VIDEO_SOURCE
+    return PROMPT_TEMPLATE.format(source=source, file_name=file_name, existing_block=block)
 
 
 def make_collage(frames: list[Path], out: Path) -> Path:

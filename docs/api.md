@@ -30,7 +30,7 @@
   "file_name": "sunset.mov", "file_size": 734003200,
   "duration": 12.5, "width": 3840, "height": 2160, "fps": 25, "codec": "h264",
   "orientation": "horizontal", "resolution_label": "4K",
-  "preview_key": "previews/<id>-a1b2.mp4", "poster_key": "posters/<id>-a1b2.jpg",
+  "preview_key": "previews/<id>-a1b2.mp4", "poster_key": "posters/<id>-a1b2.jpg", "media_type": "video",
   "uploaded_by": "Анна", "caption_dirty": 0,
   "created_at": 1760000000000, "updated_at": 1760000000000,
   "tags": ["закат", "море"], "collections": [1, 3]
@@ -49,7 +49,7 @@
 |---|---|---|
 | `GET /api/me` | — | `{ uploader: { id, name } }` — проверка токена |
 | `GET /api/videos/check-hash/:sha256` | — | `{ duplicate, videos[] }` |
-| `POST /api/videos` | `{ id?, tg_channel, tg_message_id, title, description?, file_name?, file_size?, file_hash?, duration?, width?, height?, fps?, codec?, preview_key?, poster_key?, tags?: string[], collections?: number[], created_at? }` | `201 { video }`. Повтор с тем же `id` и тем же постом → `200 { video, existing: true }`. Тот же пост под другим id → `409 tg_post_exists` |
+| `POST /api/videos` | `{ id?, tg_channel, tg_message_id, title, description?, file_name?, file_size?, file_hash?, duration?, width?, height?, fps?, codec?, preview_key?, poster_key?, media_type?: "video" | "photo", tags?: string[], collections?: number[], created_at? }` | `201 { video }`. Повтор с тем же `id` и тем же постом → `200 { video, existing: true }`. Тот же пост под другим id → `409 tg_post_exists`. У фото (`media_type: "photo"`) нет `preview_key`, `duration` и `fps`; по умолчанию `video` |
 | `PATCH /api/videos/:id` | любые поля из POST; `tags` и `collections` заменяются целиком; `caption_synced: true` — подпись в Telegram уже обновлена | `{ video }`. Заменённые превью/постеры удаляются из R2. Правка названия, описания или тегов без `caption_synced` ставит `caption_dirty = 1` |
 | `DELETE /api/videos/:id` | — | `{ deleted: video }` — запись и файлы в R2 удалены. Пост в Telegram удаляет загрузчик |
 | `PUT /api/media/<ключ>` | сырые байты файла (до 8 МБ) | `201 { key, size, url }` |

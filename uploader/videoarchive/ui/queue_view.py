@@ -176,7 +176,8 @@ class QueueDelegate(QStyledItemDelegate):
         info = item.info or {}
         parts = [item.file_name, format_size(item.file_size)]
         if info:
-            parts += [format_duration(info.get("duration")), f"{info.get('width')}×{info.get('height')} {info.get('resolution_label', '')}"]
+            first = "фото" if item.is_photo else format_duration(info.get("duration"))
+            parts += [first, f"{info.get('width')}×{info.get('height')} {info.get('resolution_label', '')}"]
         if item.tags:
             parts.append(" ".join(f"#{t}" for t in item.tags[:4]))
         painter.setPen(muted)

@@ -41,3 +41,34 @@ def videos(tmp_path_factory) -> dict[str, Path]:
         "dark": make_video(d / "dark_start.mp4", size="640x360", duration=20,
                            extra_filter="drawbox=c=black:t=fill:enable='lt(t,6)'"),
     }
+
+
+def _with_exif_orientation(jpeg: bytes, orientation: int) -> bytes:
+    """Вставляет в JPEG минимальный блок EXIF с тегом Orientation (так пишут камеры телефонов)."""
+    import struct
+
+    tiff = b"MM\x00*" + struct.pack(">I", 8) + struct.pack(">H", 1)
+    tiff += struct.pack(">HHIHH", 0x0112, 3, 1, orientation, 0) + struct.pack(">I", 0)
+    payload = b"Exif\x00\x00" + tiff
+    app1 = b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
+    return jpeg[:2] + app1 + jpeg[2:]
+
+
+def make_photo(path: Path, *, size: str = "800x600", orientation: int | None = None) -> Path:
+    raw = path.with_suffix(".src" + path.suffix) if orientation else path
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s={size}",
+                    "-frames:v", "1", str(raw)], check=True)
+    if orientation:
+        path.write_bytes(_with_exif_orientation(raw.read_bytes(), orientation))
+        raw.unlink()
+    return path
+
+
+@pytest.fixture(scope="session")
+def photos(tmp_path_factory) -> dict[str, Path]:
+    d = tmp_path_factory.mktemp("photos")
+    return {
+        # Камера сняла 800×600, но телефон держали вертикально: EXIF Orientation = 6 (поворот на 90°).
+        "rotated": make_photo(d / "IMG_1234.jpg", orientation=6),
+        "png": make_photo(d / "Скриншот_экрана.png", size="1280x720"),
+    }

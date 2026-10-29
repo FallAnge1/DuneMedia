@@ -20,6 +20,7 @@ import {
   normalizeChannel,
   normalizeTags,
   optMediaKey,
+  optMediaType,
   optNumber,
   optString,
   orientationOf,
@@ -48,6 +49,7 @@ function readMetadata(body: Record<string, unknown>) {
     codec: optString(body, "codec", 50),
     preview_key: optMediaKey(body, "preview_key"),
     poster_key: optMediaKey(body, "poster_key"),
+    media_type: optMediaType(body),
   };
 }
 
@@ -71,7 +73,7 @@ videoRoutes.get("/check-hash/:hash", async (c) => {
   return c.json({ duplicate: videos.length > 0, videos });
 });
 
-/** POST /api/videos — создать запись после загрузки видео в Telegram. */
+/** POST /api/videos — создать запись после загрузки видео или фото в Telegram (media_type, по умолчанию video). */
 videoRoutes.post("/", async (c) => {
   const body = await readJsonObject(c);
   const db = c.env.DB;
@@ -111,7 +113,7 @@ videoRoutes.post("/", async (c) => {
   await db.batch([
     db
       .prepare(
-        `INSERT INTO videos (${VIDEO_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO videos (${VIDEO_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -131,6 +133,7 @@ videoRoutes.post("/", async (c) => {
         meta.codec ?? null,
         meta.preview_key ?? null,
         meta.poster_key ?? null,
+        meta.media_type ?? "video",
         c.var.uploader.name,
         0,
         createdAt,

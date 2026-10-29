@@ -18,6 +18,7 @@ from typing import Any, Protocol, TypeVar
 from telethon import TelegramClient, errors
 
 from videoarchive import __version__
+from videoarchive.core.fastupload import BIG_FILE, FastUploadUnavailable, upload_big_file
 from videoarchive.core.textutil import TG_LIMIT, TG_LIMIT_PREMIUM
 
 log = logging.getLogger(__name__)
@@ -116,7 +117,8 @@ def translate(err: BaseException) -> TelegramError:
 
 
 class TelegramService:
-    def __init__(self, session: Path, api_id: int, api_hash: str):
+    def __init__(self, session: Path, api_id: int, api_hash: str, upload_connections: int = 8):
+        self.upload_connections = upload_connections  # 1 — обычная загрузка Telethon (по одному куску)
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="telegram", daemon=True)
         self._thread.start()
@@ -243,7 +245,7 @@ class TelegramService:
 
     def send_video(self, channel: str, path: Path, caption: str, thumb: Path | None, progress: ProgressCallback | None = None,
                    cancel: threading.Event | None = None) -> int:
-        """Отправляет файл документом (без сжатия). Возвращает id поста."""
+        """Отправляет файл (видео или фото) документом, без сжатия. Возвращает id поста."""
 
         def on_progress(sent: int, total: int) -> None:
             if cancel and cancel.is_set():
@@ -253,9 +255,15 @@ class TelegramService:
 
         async def go() -> int:
             entity = await self._entity(channel)
+            file: Any = str(path)
+            if self.upload_connections > 1 and path.stat().st_size >= BIG_FILE:
+                try:
+                    file = await upload_big_file(self._client, path, connections=self.upload_connections, progress=on_progress)
+                except FastUploadUnavailable as err:
+                    log.warning("Быстрая загрузка недоступна (%s), загружаю обычным способом", err)
             message = await self._client.send_file(
                 entity,
-                str(path),
+                file,
                 caption=caption,
                 parse_mode=None,  # без Markdown: иначе _ в хештегах превратится в курсив
                 force_document=True,

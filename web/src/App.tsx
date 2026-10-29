@@ -9,6 +9,7 @@ import {
   sortVideos,
   tagCounts,
   pageFromUrl,
+  type FilterGroup,
   type Filters,
   type Page,
 } from "./lib/filters";
@@ -115,10 +116,12 @@ export function App() {
     };
     const without = (patch: Partial<Filters>) => applyFilters(videos, { ...filters, ...patch }, ctx);
     const durationKey = (v: Video) => {
+      if (v.media_type === "photo") return null;
       const d = v.duration ?? 0;
       return d < 10 ? "lt10" : d < 30 ? "10to30" : d < 60 ? "30to60" : "gt60";
     };
     return {
+      media: countBy(without({ media: [] }), (v) => v.media_type ?? "video"),
       orientation: countBy(without({ orientation: [] }), (v) => v.orientation),
       resolution: countBy(without({ resolution: [] }), (v) => v.resolution_label),
       duration: countBy(without({ duration: [] }), durationKey),
@@ -205,9 +208,9 @@ export function App() {
     }
   }, [library, openId, videoMap, toast]);
 
-  const activeCount = filters.tags.length + filters.orientation.length + filters.resolution.length + filters.duration.length;
+  const activeCount = filters.tags.length + filters.media.length + filters.orientation.length + filters.resolution.length + filters.duration.length;
   const resetFilters = () => update({ ...EMPTY_FILTERS, tab: filters.tab, sort: filters.sort });
-  const toggleIn = (group: "orientation" | "resolution" | "duration", value: string) =>
+  const toggleIn = (group: FilterGroup, value: string) =>
     setFilters((f) => {
       const list = f[group] as string[];
       return { ...f, [group]: list.includes(value) ? list.filter((x) => x !== value) : [...list, value] };
@@ -371,7 +374,7 @@ export function App() {
               ) : videos.length === 0 ? (
                 <div className="empty">
                   <h2>Архив пока пуст</h2>
-                  <p className="muted">Видео появятся здесь после загрузки через программу-загрузчик.</p>
+                  <p className="muted">Видео и фото появятся здесь после загрузки через программу-загрузчик.</p>
                 </div>
               ) : (
                 <div className="empty">

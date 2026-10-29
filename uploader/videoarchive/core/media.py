@@ -1,4 +1,4 @@
-"""ffprobe и ffmpeg: метаданные, превью, постер, миниатюра для Telegram, кадры для ИИ."""
+"""ffprobe и ffmpeg: метаданные, превью, постер, миниатюра для Telegram, кадры для ИИ. Видео и фото."""
 
 from __future__ import annotations
 
@@ -23,6 +23,18 @@ THUMB_LONG_SIDE = 320
 AI_FRAME_LONG_SIDE = 512
 AI_FRAME_POINTS = (0.08, 0.28, 0.5, 0.72, 0.92)
 DARK_THRESHOLD = 40  # средняя яркость 0–255, ниже — кадр считается тёмным
+PHOTO_POSTER_SHORT_SIDE = 720  # у фото постер — это и есть картинка на сайте, поэтому крупнее
+PHOTO_AI_LONG_SIDE = 1024
+
+VIDEO_EXTENSIONS = frozenset({
+    ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts", ".m2ts", ".mxf", ".wmv", ".flv", ".3gp", ".mpg", ".mpeg", ".ts", ".r3d", ".braw",
+})
+PHOTO_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".tif", ".tiff", ".bmp"})
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | PHOTO_EXTENSIONS
+
+
+def is_photo(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in PHOTO_EXTENSIONS
 
 
 class MediaError(Exception):
@@ -127,13 +139,33 @@ def probe(path: Path) -> VideoInfo:
     return parse_probe(data, path.stat().st_size)
 
 
-def parse_probe(data: dict, size: int) -> VideoInfo:
+def probe_photo(path: Path) -> VideoInfo:
+    """Размеры фото с учётом поворота. У JPEG с телефона поворот (EXIF) виден только на уровне кадра."""
+    result = _run([_tool("ffprobe"), "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
+                   "-select_streams", "v:0", "-show_frames", "-read_intervals", "%+#1", str(path)], timeout=120)
+    try:
+        data = json.loads(result.stdout.decode("utf-8", "replace"))
+    except ValueError as err:
+        raise MediaError("ffprobe вернул непонятный ответ") from err
+    frames = data.get("frames") or []
+    streams = data.get("streams") or []
+    if frames and streams and not any("rotation" in s for s in streams[0].get("side_data_list") or []):
+        rotations = [s for s in frames[0].get("side_data_list") or [] if "rotation" in s]
+        if rotations:
+            streams[0]["side_data_list"] = (streams[0].get("side_data_list") or []) + rotations[:1]
+    info = parse_probe(data, path.stat().st_size, kind="фото")
+    info.duration = None
+    info.fps = None
+    return info
+
+
+def parse_probe(data: dict, size: int, kind: str = "видео") -> VideoInfo:
     streams = [
         s for s in data.get("streams", [])
         if s.get("codec_type") == "video" and not (s.get("disposition") or {}).get("attached_pic")
     ]
     if not streams:
-        raise MediaError("В файле нет видеодорожки")
+        raise MediaError("Не удалось прочитать фото" if kind == "фото" else "В файле нет видеодорожки")
     s = streams[0]
     width, height = int(s.get("width") or 0), int(s.get("height") or 0)
     if not width or not height:
@@ -279,8 +311,9 @@ def pick_poster_time(src: Path, duration: float | None) -> float:
 
 def extract_frame(src: Path, dst: Path, at: float, size: tuple[int, int], quality: int = 4) -> Path:
     """Один кадр в JPEG. quality — шкала ffmpeg (2 лучше, 31 хуже): 4 ≈ качество 80–85."""
+    seek = [] if is_photo(src) else ["-ss", f"{at:.3f}"]
     _run(
-        [_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{at:.3f}", "-i", str(src),
+        [_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", *seek, "-i", str(src),
          "-frames:v", "1", "-vf", f"scale={size[0]}:{size[1]}:flags=bicubic,setsar=1", "-q:v", str(quality), str(dst)],
         timeout=120,
     )
@@ -292,6 +325,16 @@ def extract_frame(src: Path, dst: Path, at: float, size: tuple[int, int], qualit
 def make_poster(src: Path, dst: Path, info: VideoInfo) -> Path:
     at = pick_poster_time(src, info.duration)
     return extract_frame(src, dst, at, fit_short_side(info.width, info.height, POSTER_SHORT_SIDE), quality=4)
+
+
+def make_photo_poster(src: Path, dst: Path, info: VideoInfo) -> Path:
+    """Уменьшенная копия фото для сайта (JPEG, ~720 px по короткой стороне), поворот уже учтён."""
+    return extract_frame(src, dst, 0.0, fit_short_side(info.width, info.height, PHOTO_POSTER_SHORT_SIDE), quality=3)
+
+
+def extract_photo_ai_frame(src: Path, out_dir: Path, info: VideoInfo) -> list[Path]:
+    """Для фото ИИ получает одну картинку, но крупнее, чем кадры видео."""
+    return [extract_frame(src, out_dir / "ai_0.jpg", 0.0, fit_long_side(info.width, info.height, PHOTO_AI_LONG_SIDE), quality=4)]
 
 
 def make_thumb(poster: Path, dst: Path, info: VideoInfo) -> Path:

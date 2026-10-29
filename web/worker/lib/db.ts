@@ -1,5 +1,7 @@
 /** Работа с D1: выборки видео, синхронизация FTS, ревизия архива. */
 
+import type { MediaType } from "./normalize";
+
 export interface VideoRow {
   id: string;
   tg_channel: string;
@@ -18,6 +20,8 @@ export interface VideoRow {
   codec: string | null;
   preview_key: string | null;
   poster_key: string | null;
+  /** 'video' или 'photo': у фото нет превью-ролика, длительности и fps. */
+  media_type: MediaType;
   uploaded_by: string | null;
   /** 1 — подпись поста в Telegram устарела (правки сделаны на сайте). */
   caption_dirty: number;
@@ -31,7 +35,7 @@ export interface Video extends VideoRow {
 }
 
 export const VIDEO_COLUMNS = `id, tg_channel, tg_message_id, title, description, file_name, file_size, file_hash,
-  duration, width, height, orientation, resolution_label, fps, codec, preview_key, poster_key,
+  duration, width, height, orientation, resolution_label, fps, codec, preview_key, poster_key, media_type,
   uploaded_by, caption_dirty, created_at, updated_at`;
 
 /** Увеличивает ревизию архива (ETag для /api/library). Добавляйте в каждый batch с изменениями. */

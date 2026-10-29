@@ -1,11 +1,11 @@
-import { DURATIONS, ORIENTATIONS, type Filters } from "../lib/filters";
+import { DURATIONS, MEDIA_TYPES, ORIENTATIONS, type FilterGroup, type Filters } from "../lib/filters";
 import { IconClose } from "./Icons";
 
 interface Props {
   filters: Filters;
   found: number;
   onRemoveTag: (tag: string) => void;
-  onRemove: (group: "orientation" | "resolution" | "duration", value: string) => void;
+  onRemove: (group: FilterGroup, value: string) => void;
   onClearQuery: () => void;
   onReset: () => void;
 }
@@ -16,6 +16,9 @@ export function ActiveChips({ filters: f, found, ...p }: Props) {
   const chips: { key: string; label: string; remove: () => void }[] = [];
   if (f.q) chips.push({ key: "q", label: `«${f.q}»`, remove: p.onClearQuery });
   // Выбранные теги показываются в полосе тегов над сеткой.
+  for (const m of f.media) {
+    chips.push({ key: `m:${m}`, label: MEDIA_TYPES.find((x) => x.value === m)!.label, remove: () => p.onRemove("media", m) });
+  }
   for (const o of f.orientation) {
     chips.push({ key: `o:${o}`, label: ORIENTATIONS.find((x) => x.value === o)!.label, remove: () => p.onRemove("orientation", o) });
   }

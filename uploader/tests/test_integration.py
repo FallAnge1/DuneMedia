@@ -49,3 +49,23 @@ def test_upload_to_real_site(videos):
     assert any(v["id"] == item.id for v in api.check_hash(item.file_hash))
     # уборка
     api.delete_video(item.id)
+
+
+def test_photo_to_real_site(photos):
+    api = ApiClient(SITE, TOKEN)
+    store, tg = QueueStore(), FakeTelegram()
+    tg.next_id = 950_000 + os.getpid() % 10_000 * 10
+    p = Pipeline(store, api=api, telegram=tg, channel="dune_media_test")
+    path = photos["rotated"]
+    item = QueueItem(path=str(path), file_name=path.name, file_size=path.stat().st_size, title="Фото у окна")
+    store.add(item)
+    p.prepare(item.id)
+    p.upload(item.id)
+    item = store.get(item.id)
+    assert item.status == DONE, item.error
+    video = api.get_video(item.id)
+    assert video["media_type"] == "photo"
+    assert video["preview_key"] is None and video["duration"] is None
+    assert video["orientation"] == "vertical"
+    assert httpx.get(f"{SITE}/media/{video['poster_key']}").status_code == 200
+    api.delete_video(item.id)

@@ -108,12 +108,34 @@ describe("видео", () => {
       [videoPayload({ preview_key: "../etc/passwd" }), /preview_key/],
       [videoPayload({ collections: [999999] }), /Коллекции не найдены/],
       [videoPayload({ file_hash: "xyz" }), /file_hash/],
+      [videoPayload({ media_type: "gif" }), /media_type/],
     ];
     for (const [payload, message] of cases) {
       const res = await api("/api/videos", { method: "POST", token, json: payload });
       expect(res.status, JSON.stringify(payload)).toBe(400);
       expect((await json(res)).error.message).toMatch(message);
     }
+  });
+
+  it("фото: media_type сохраняется, превью и длительность не нужны; по умолчанию — видео", async () => {
+    const photo = await json(
+      await api("/api/videos", {
+        method: "POST",
+        token,
+        json: videoPayload({
+          media_type: "photo", duration: null, fps: null, codec: "mjpeg", width: 3000, height: 4000,
+          file_name: "IMG_1.jpg", poster_key: "posters/photo-1.jpg",
+        }),
+      }),
+    );
+    expect(photo.video.media_type).toBe("photo");
+    expect(photo.video.orientation).toBe("vertical");
+    expect(photo.video.preview_key).toBeNull();
+    const video = await json(await api("/api/videos", { method: "POST", token, json: videoPayload() }));
+    expect(video.video.media_type).toBe("video");
+    const lib = await json(await api("/api/library"));
+    const found = lib.videos.find((v: { id: string }) => v.id === photo.video.id);
+    expect(found.media_type).toBe("photo");
   });
 
   it("PATCH меняет поля, теги и коллекции", async () => {

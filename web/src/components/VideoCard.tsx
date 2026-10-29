@@ -138,10 +138,12 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
               <OrientationIcon orientation={video.orientation} />
             </span>
           </div>
-          <span className="badge card-duration">{formatDuration(video.duration)}</span>
-          <div className="card-progress">
-            <div ref={progressRef} />
-          </div>
+          <span className="badge card-duration">{video.media_type === "photo" ? "Фото" : formatDuration(video.duration)}</span>
+          {preview && (
+            <div className="card-progress">
+              <div ref={progressRef} />
+            </div>
+          )}
         </a>
 
         {selectMode ? (

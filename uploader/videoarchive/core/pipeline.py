@@ -1,6 +1,7 @@
 """Обработка одного файла (раздел 6.4 ТЗ).
 
 Подготовка: ffprobe → хеш и дубликаты → превью → постер и миниатюра → кадры для ИИ → ИИ-теги.
+У фото нет превью-ролика: постер — уменьшенная копия снимка, ИИ получает одну картинку.
 Загрузка:   Telegram → превью и постер на сайт → запись на сайте.
 
 Каждый шаг сохраняет результат в очереди. Если программа упала или пропала сеть, повтор
@@ -25,7 +26,7 @@ from videoarchive.core.media import MediaError, VideoInfo
 from videoarchive.core.paths import work_dir
 from videoarchive.core.queue import DONE, ERROR, PREPARING, QUEUED, READY, UPLOADING, QueueItem, QueueStore
 from videoarchive.core.telegram import FloodWait, TelegramConnectionError, TelegramError, TelegramLike, UploadCancelled, wait_flood
-from videoarchive.core.textutil import CAPTION_LIMIT, CAPTION_LIMIT_PREMIUM, TG_LIMIT, build_caption, file_hash
+from videoarchive.core.textutil import CAPTION_LIMIT, CAPTION_LIMIT_PREMIUM, TG_LIMIT, build_caption, file_hash, normalize_tags
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,22 @@ class Tagger(Protocol):
 Notify = Callable[[str], None]
 
 
+def suggestion_fields(item: QueueItem, title: bool = True, description: bool = True, tags: bool = True) -> dict:
+    """Поля, которые надо записать в элемент, чтобы применить предложение ИИ.
+
+    Название и описание заменяются, теги добавляются к уже стоящим.
+    """
+    s = item.ai_suggestion or {}
+    fields: dict[str, object] = {}
+    if title and s.get("title"):
+        fields["title"] = s["title"]
+    if description and s.get("description"):
+        fields["description"] = s["description"]
+    if tags and s.get("tags"):
+        fields["tags"] = normalize_tags(item.tags + list(s["tags"]))
+    return fields
+
+
 def format_size(n: float) -> str:
     for unit in ("Б", "КБ", "МБ", "ГБ"):
         if n < 1024 or unit == "ГБ":
@@ -68,6 +85,7 @@ class Pipeline:
         channel: str,
         tagger: Tagger | None = None,
         ai_auto: bool = False,
+        ai_auto_apply: bool = False,
         existing_tags: Callable[[], list[str]] = lambda: [],
         notify: Notify = lambda _id: None,
         telegram_retries: int = 3,
@@ -78,6 +96,7 @@ class Pipeline:
         self.channel = channel
         self.tagger = tagger
         self.ai_auto = ai_auto
+        self.ai_auto_apply = ai_auto_apply
         self.existing_tags = existing_tags
         self.notify = notify
         self.telegram_retries = telegram_retries
@@ -144,7 +163,7 @@ class Pipeline:
         # 1. ffprobe
         if not item.info:
             self._set(item, stage="probe", save=False)
-            info = media.probe(src)
+            info = media.probe_photo(src) if item.is_photo else media.probe(src)
             self._set(item, info=info.to_dict(), file_size=info.size)
         info = VideoInfo.from_dict(item.info or {})
         self.check_size(item)
@@ -158,8 +177,8 @@ class Pipeline:
             self._set(item, file_hash=digest, duplicates=duplicates)
         self._check_cancel(cancel)
 
-        # 3. Превью
-        if not (item.preview_path and Path(item.preview_path).exists()):
+        # 3. Превью (только видео)
+        if not item.is_photo and not (item.preview_path and Path(item.preview_path).exists()):
             self._set(item, stage="preview", save=False)
             preview = media.make_preview(src, out / "preview.mp4", info)
             self._set(item, preview_path=str(preview))
@@ -168,7 +187,8 @@ class Pipeline:
         # 4. Постер и миниатюра для Telegram
         if not (item.poster_path and Path(item.poster_path).exists()) or not (item.thumb_path and Path(item.thumb_path).exists()):
             self._set(item, stage="poster", save=False)
-            poster = media.make_poster(src, out / "poster.jpg", info)
+            make = media.make_photo_poster if item.is_photo else media.make_poster
+            poster = make(src, out / "poster.jpg", info)
             thumb = media.make_thumb(poster, out / "thumb.jpg", info)
             self._set(item, poster_path=str(poster), thumb_path=str(thumb))
         self._check_cancel(cancel)
@@ -198,8 +218,12 @@ class Pipeline:
         frames = [Path(f) for f in item.frames if Path(f).exists()]
         if frames:
             return frames
-        info = VideoInfo.from_dict(item.info or {}) if item.info else media.probe(item.path_obj)
-        frames = media.extract_ai_frames(item.path_obj, work_dir(item.id), info)
+        if item.info:
+            info = VideoInfo.from_dict(item.info)
+        else:
+            info = media.probe_photo(item.path_obj) if item.is_photo else media.probe(item.path_obj)
+        extract = media.extract_photo_ai_frame if item.is_photo else media.extract_ai_frames
+        frames = extract(item.path_obj, work_dir(item.id), info)
         self._set(item, frames=[str(f) for f in frames])
         return frames
 
@@ -220,6 +244,10 @@ class Pipeline:
         self._set(item, stage=prev_stage if prev_stage != "ai" else "", ai_suggestion={
             "title": s.title, "description": s.description, "tags": s.tags, "provider": s.provider, "model": s.model,
         })
+        if self.ai_auto_apply:
+            current = self.store.get(item_id)
+            if current and current.status not in (UPLOADING, DONE) and not current.tg_message_id:
+                self._set(current, **suggestion_fields(current))
         return s
 
     # ------------------------------------------------------------------ загрузка
@@ -244,7 +272,8 @@ class Pipeline:
             self._prepare(item, cancel)
             item = self.store.get(item.id) or item
         if item.is_duplicate and not item.tg_message_id:
-            raise PipelineError("Такое видео уже есть. Отметьте «Загрузить всё равно» или удалите из очереди.")
+            what = "фото" if item.is_photo else "видео"
+            raise PipelineError(f"Такое {what} уже есть. Отметьте «Загрузить всё равно» или удалите из очереди.")
         if not item.title.strip():
             raise PipelineError("Укажите название")
         if not self.telegram:
@@ -263,10 +292,11 @@ class Pipeline:
         if not item.media_uploaded:
             self._set(item, stage="site", progress=0.0, save=False)
             suffix = secrets.token_hex(4)
-            preview_key = item.preview_key or f"previews/{item.id}-{suffix}.mp4"
+            preview_key = None if item.is_photo else (item.preview_key or f"previews/{item.id}-{suffix}.mp4")
             poster_key = item.poster_key or f"posters/{item.id}-{suffix}.jpg"
             self._set(item, preview_key=preview_key, poster_key=poster_key)
-            self.api.put_media(preview_key, Path(item.preview_path or ""))
+            if preview_key:
+                self.api.put_media(preview_key, Path(item.preview_path or ""))
             self.api.put_media(poster_key, Path(item.poster_path or ""))
             self._set(item, media_uploaded=True)
 
@@ -278,6 +308,7 @@ class Pipeline:
                 "id": item.id,
                 "tg_channel": item.tg_channel or self.channel,
                 "tg_message_id": item.tg_message_id,
+                "media_type": item.media_type,
                 "title": item.title.strip(),
                 "description": item.description.strip() or None,
                 "file_name": item.file_name,
