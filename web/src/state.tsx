@@ -65,7 +65,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     try {
       const lib = await fetchLibrary();
-      setLibrary(lib);
+      // Архив не менялся (та же ревизия) — оставляем прежний объект: иначе вся страница
+      // пересчитала бы выдачу и заново построила индекс поиска.
+      setLibrary((prev) => (prev && prev.rev === lib.rev ? prev : lib));
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Не удалось загрузить архив");

@@ -26,8 +26,8 @@ export function stem(word: string): string {
 
 const normalize = (term: string) => term.toLowerCase().replace(/ё/g, "е");
 
-export function buildSearchIndex(videos: Video[]): MiniSearch<Video> {
-  const index = new MiniSearch<Video>({
+function createIndex(): MiniSearch<Video> {
+  return new MiniSearch<Video>({
     fields: ["title", "description", "tagText"],
     storeFields: [],
     extractField: (doc, field) => {
@@ -52,8 +52,38 @@ export function buildSearchIndex(videos: Video[]): MiniSearch<Video> {
       },
     },
   });
+}
+
+export function buildSearchIndex(videos: Video[]): MiniSearch<Video> {
+  const index = createIndex();
   index.addAll(videos);
   return index;
+}
+
+/**
+ * То же, но кусками с паузами между ними: на 20 тысячах видео индекс строится ~0,5 с,
+ * и одним куском это заморозило бы страницу. Пока индекс строится, работает fallbackSearchIds.
+ */
+export async function buildSearchIndexAsync(videos: Video[]): Promise<MiniSearch<Video>> {
+  const index = createIndex();
+  await index.addAllAsync(videos, { chunkSize: 400 });
+  return index;
+}
+
+/** Простой поиск на время построения индекса: каждое слово (его основа) должно встречаться в тексте. */
+export function fallbackSearchIds(videos: Video[], query: string): Set<string> {
+  const words = query
+    .split(/[^\p{L}\p{N}]+/u)
+    .map(normalize)
+    .filter(Boolean)
+    .map(stem);
+  const out = new Set<string>();
+  if (words.length === 0) return out;
+  for (const v of videos) {
+    const hay = normalize(`${v.title} ${v.description ?? ""} ${v.tags.join(" ")}`);
+    if (words.every((w) => hay.includes(w))) out.add(v.id);
+  }
+  return out;
 }
 
 /**

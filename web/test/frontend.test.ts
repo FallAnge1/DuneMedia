@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Video } from "../src/lib/api";
 import { applyFilters, EMPTY_FILTERS, filtersFromUrl, filtersToUrl, pageFromUrl, sortVideos, type Filters } from "../src/lib/filters";
-import { buildSearchIndex, searchIds, stem } from "../src/lib/search";
+import { buildSearchIndex, buildSearchIndexAsync, fallbackSearchIds, searchIds, stem } from "../src/lib/search";
 
 let n = 0;
 function video(over: Partial<Video>): Video {
@@ -104,6 +104,17 @@ describe("фильтры", () => {
 
 describe("поиск", () => {
   const index = buildSearchIndex(videos);
+
+  it("фоновый индекс совпадает с обычным, запасной поиск находит то же по точным словам", async () => {
+    const asyncIndex = await buildSearchIndexAsync(videos);
+    for (const q of ["закат", "горах", "водо", "ночной город"]) {
+      expect([...searchIds(asyncIndex, q)].sort()).toEqual([...searchIds(index, q)].sort());
+    }
+    for (const q of ["закат", "дрон", "Ночной город"]) {
+      expect([...fallbackSearchIds(videos, q)].sort()).toEqual([...searchIds(index, q)].sort());
+    }
+    expect(fallbackSearchIds(videos, "   ").size).toBe(0);
+  });
   const find = (q: string) => [...searchIds(index, q)].map((id) => videos.find((v) => v.id === id)!.title).sort();
 
   it("по префиксу", () => {

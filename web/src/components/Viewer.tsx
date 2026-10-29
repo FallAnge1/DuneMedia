@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { mediaUrl, type Collection, type Video } from "../lib/api";
 import { formatDate, formatDuration, formatFps, formatSize, telegramUrl } from "../lib/format";
-import { copyText, openInTelegram } from "../lib/telegram";
+import { copyText } from "../lib/telegram";
 import { useApp } from "../state";
 import { EditForm } from "./EditForm";
 import { IconChevronLeft, IconChevronRight, IconClose, IconCopy, IconEdit, IconHeart, IconLink, IconTelegram, OrientationIcon } from "./Icons";
@@ -154,9 +154,9 @@ export function Viewer(p: Props) {
               {v.description && <p className="viewer-desc">{v.description}</p>}
 
               <div className="viewer-actions">
-                <button type="button" className="btn btn-dark btn-block" onClick={() => openInTelegram(v.tg_channel, v.tg_message_id)}>
+                <a className="btn btn-dark btn-block" href={tgLink} target="_blank" rel="noopener noreferrer">
                   <IconTelegram /> Открыть в Telegram и скачать
-                </button>
+                </a>
                 <button type="button" className="link-btn small" onClick={() => copy(tgLink, "Ссылка на пост")}>
                   <IconCopy size={14} /> Скопировать ссылку
                 </button>

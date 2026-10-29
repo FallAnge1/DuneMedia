@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { mediaUrl, type Video } from "../lib/api";
-import { formatDuration } from "../lib/format";
-import { IconCheck, IconFilm, IconHeart, OrientationIcon } from "./Icons";
+import { formatDuration, telegramUrl } from "../lib/format";
+import { IconCheck, IconDownload, IconFilm, IconHeart, OrientationIcon } from "./Icons";
 
 /** Высота подписи под карточкой (название + теги), учитывается в раскладке сетки. */
 export const CAPTION_H = 44;
@@ -159,6 +159,17 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
             >
               {saved ? "Сохранено" : "Сохранить"}
             </button>
+            <a
+              className="card-dl"
+              href={telegramUrl(video.tg_channel, video.tg_message_id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Скачать: открыть пост в Telegram"
+              title="Скачать (откроется пост в Telegram)"
+              draggable={false}
+            >
+              <IconDownload size={16} />
+            </a>
             <button
               type="button"
               className={`card-fav${favorite ? " is-on" : ""}`}

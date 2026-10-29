@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type MiniSearch from "minisearch";
 import { mediaUrl, type Video } from "./lib/api";
 import {
   applyFilters,
@@ -13,7 +14,7 @@ import {
   type Filters,
   type Page,
 } from "./lib/filters";
-import { buildSearchIndex, searchIds } from "./lib/search";
+import { buildSearchIndexAsync, fallbackSearchIds, searchIds } from "./lib/search";
 import { useStoredState } from "./lib/storage";
 import { useApp } from "./state";
 import { ActiveChips } from "./components/ActiveChips";
@@ -97,9 +98,27 @@ export function App() {
   );
 
   // ---- Выдача ----
-  const videos = library?.videos ?? [];
-  const index = useMemo(() => buildSearchIndex(videos), [videos]);
-  const searchSet = useMemo(() => (filters.q.trim() ? searchIds(index, filters.q) : null), [index, filters.q]);
+  const videos = useMemo(() => library?.videos ?? [], [library]);
+  // Индекс поиска строится в фоне кусками; пока его нет (или он от прошлой версии архива) —
+  // простой поиск по подстроке. Старый индекс не выбрасываем: лишние id всё равно отсекаются выдачей.
+  const [index, setIndex] = useState<{ videos: Video[]; index: MiniSearch<Video> } | null>(null);
+  useEffect(() => {
+    if (videos.length === 0) return;
+    let cancelled = false;
+    void buildSearchIndexAsync(videos).then((built) => {
+      if (!cancelled) setIndex({ videos, index: built });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [videos]);
+  // Поиск отстаёт от набора на кадр-другой: буквы появляются сразу, выдача догоняет.
+  const query = useDeferredValue(filters.q);
+  const searchSet = useMemo(() => {
+    if (!query.trim()) return null;
+    if (index && index.videos === videos) return searchIds(index.index, query);
+    return fallbackSearchIds(videos, query);
+  }, [index, videos, query]);
   const ctx = useMemo(() => ({ searchIds: searchSet, favorites }), [searchSet, favorites]);
 
   const results = useMemo(() => sortVideos(applyFilters(videos, filters, ctx), filters.sort), [videos, filters, ctx]);
