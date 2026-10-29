@@ -26,6 +26,9 @@ log = logging.getLogger(__name__)
 PART_SIZE = 512 * 1024  # максимум, который принимает Telegram
 BIG_FILE = 10 * 1024 * 1024  # меньшие файлы Telegram хочет получать обычным способом (с md5)
 PART_RETRIES = 5
+MAX_FLOOD_WAIT = 60  # секунд: дольше — ошибка уходит в конвейер
+MAX_TOTAL_FLOOD_WAIT = 900  # суммарно на один файл
+RAMP_UP_AFTER = 16  # удачных кусков подряд — и можно ещё один одновременный
 
 
 class FastUploadUnavailable(Exception):
@@ -69,31 +72,69 @@ async def upload_big_file(
     pending = list(range(parts - 1, -1, -1))  # pop() отдаёт куски по порядку
     sent = 0
     stop: BaseException | None = None
+    loop = asyncio.get_running_loop()
+    # Telegram может попросить подождать пару секунд (FLOOD_WAIT, у аккаунтов без Premium — часто).
+    # Тогда все соединения вместе ждут, кусок отправляется заново, а одновременных кусков становится вдвое меньше.
+    # После серии удачных кусков их число снова понемногу растёт.
+    pause_until = 0.0
+    slots = len(senders) * max(1, in_flight)
+    allowed = slots
+    waited = 0
+    streak = 0
 
     def read(index: int) -> bytes:
         with path.open("rb") as f:
             f.seek(index * PART_SIZE)
             return f.read(PART_SIZE)
 
-    async def worker(sender: MTProtoSender) -> None:
-        nonlocal sent, stop
+    async def wait_pause() -> None:
+        while (delay := pause_until - loop.time()) > 0:
+            await asyncio.sleep(delay)
+
+    async def worker(slot: int, sender: MTProtoSender) -> None:
+        nonlocal sent, stop, pause_until, allowed, waited, streak
         while pending and stop is None:
+            if slot >= allowed:  # полоса временно выключена — ждём, пока лимит снова вырастет
+                await asyncio.sleep(0.5)
+                continue
+            await wait_pause()
+            if not pending or stop is not None:
+                return
             index = pending.pop()
             data = await asyncio.to_thread(read, index)
-            for attempt in range(PART_RETRIES):
+            attempt = 0
+            while True:
+                await wait_pause()
+                if stop is not None:
+                    return
                 try:
                     await sender.send(SaveBigFilePartRequest(file_id, index, parts, data))
                     break
-                except errors.FloodWaitError:
-                    raise
+                except errors.FloodError as err:
+                    seconds = int(getattr(err, "seconds", 0) or 0)
+                    if seconds > MAX_FLOOD_WAIT or waited + seconds > MAX_TOTAL_FLOOD_WAIT:
+                        raise  # долгое ожидание — пусть решает конвейер (покажет обратный отсчёт)
+                    # Одна пауза часто приходит сразу на несколько кусков — урезаем только один раз.
+                    if loop.time() + seconds > pause_until:
+                        waited += seconds
+                        pause_until = loop.time() + seconds + 0.5
+                        streak = 0
+                        if allowed > 1:
+                            allowed = max(1, allowed // 2)
+                        log.info("Telegram просит подождать %d с — одновременных кусков теперь %d", seconds, allowed)
                 except Exception as err:  # noqa: BLE001
                     if stop is not None:
                         return
-                    if attempt == PART_RETRIES - 1:
+                    attempt += 1
+                    if attempt >= PART_RETRIES:
                         raise
                     log.info("Кусок %d: %s, повтор", index, err)
-                    await asyncio.sleep(1 + attempt)
+                    await asyncio.sleep(attempt)
             sent += len(data)
+            streak += 1
+            if streak >= RAMP_UP_AFTER and allowed < slots:
+                allowed += 1
+                streak = 0
             if progress:
                 try:
                     progress(min(sent, size), size)
@@ -102,7 +143,12 @@ async def upload_big_file(
                     raise
 
     try:
-        tasks = [asyncio.ensure_future(worker(s)) for s in senders for _ in range(max(1, in_flight))]
+        # Полосы по кругу через соединения: когда их становится меньше, нагрузка всё равно делится между всеми.
+        tasks = [
+            asyncio.ensure_future(worker(j * len(senders) + k, sender))
+            for j in range(max(1, in_flight))
+            for k, sender in enumerate(senders)
+        ]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
         failed = next((t for t in done if t.exception()), None)
         if failed:
@@ -111,6 +157,8 @@ async def upload_big_file(
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise stop  # type: ignore[misc]
+        if pending:  # все полосы вышли, а куски остались — так быть не должно
+            raise RuntimeError(f"Не отправлено кусков: {len(pending)}")
     finally:
         for s in senders:
             try:

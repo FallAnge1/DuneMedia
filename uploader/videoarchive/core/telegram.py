@@ -86,8 +86,8 @@ def translate(err: BaseException) -> TelegramError:
     """Ошибки Telethon → сообщения на русском."""
     if isinstance(err, TelegramError):
         return err
-    if isinstance(err, errors.FloodWaitError):
-        return FloodWait(int(err.seconds))
+    if isinstance(err, errors.FloodError) and getattr(err, "seconds", None) is not None:
+        return FloodWait(int(err.seconds))  # FLOOD_WAIT и FLOOD_PREMIUM_WAIT (лимит скорости без Premium)
     mapping: list[tuple[type[BaseException], str]] = [
         (errors.PhoneNumberInvalidError, "Неверный номер телефона. Укажите его в международном формате, например +79991234567."),
         (errors.PhoneNumberBannedError, "Этот номер заблокирован в Telegram."),
