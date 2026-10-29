@@ -905,79 +905,60 @@ textarea.input {
   transform-origin: left;
 }
 
-.card-save {
+/* Кнопки на карточке: маленькие полупрозрачные кружки в правом верхнем углу,
+   чтобы не закрывать превью. Порядок справа налево: ♡, скачать, сохранить. */
+.card-save,
+.card-dl,
+.card-fav {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  height: 40px;
-  padding: 0 16px;
+  top: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: 0;
-  border-radius: 20px;
-  background: var(--accent);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.42);
   color: #fff;
-  font-weight: 700;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
-}
-
-.card-save:hover {
-  background: var(--accent-hover);
-}
-
-.card-save.is-saved {
-  background: #111;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
 }
 
 .card-fav {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 0.92);
-  color: #111;
-  opacity: 0;
-  transition: opacity 0.15s, transform 0.15s;
-}
-
-.card-fav:hover {
-  background: #fff;
+  right: 8px;
 }
 
 .card-dl {
-  position: absolute;
-  right: 48px;
-  bottom: 10px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 0.92);
-  color: #111;
-  opacity: 0;
-  transition: opacity 0.15s, transform 0.15s;
+  right: 44px;
 }
 
-.card-dl:hover {
-  background: #fff;
+.card-save {
+  right: 80px;
 }
 
-.card-dl:active {
+.card-save:hover,
+.card-dl:hover,
+.card-fav:hover {
+  background: rgb(0 0 0 / 0.7);
+}
+
+.card-save:active,
+.card-dl:active,
+.card-fav:active {
   transform: scale(0.9);
+}
+
+.card-save.is-saved {
+  background: var(--accent);
 }
 
 .card-fav.is-on {
   color: var(--accent);
+  background: rgb(255 255 255 / 0.92);
   opacity: 1;
-}
-
-.card-fav:active {
-  transform: scale(0.9);
 }
 
 .card:hover .card-shade,
@@ -994,6 +975,21 @@ textarea.input {
 .card-save:focus-visible,
 .card-fav:focus-visible {
   opacity: 1;
+}
+
+/* Пока играет превью — только кнопки и полоска прогресса: значки и длительность прячутся,
+   затемнение остаётся лишь сверху, под кнопками. */
+.card.is-playing .card-badges,
+.card.is-playing .card-duration {
+  opacity: 0;
+}
+
+.card.is-playing .card-shade {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.3), rgb(0 0 0 / 0) 25%);
+}
+
+.card-duration {
+  transition: opacity 0.15s;
 }
 
 .card.is-active .card-progress {
@@ -2135,12 +2131,6 @@ textarea.input {
 
   .board-title {
     font-size: 0.95rem;
-  }
-
-  .card-save {
-    height: 32px;
-    padding: 0 12px;
-    font-size: 0.8rem;
   }
 
   .bulk {

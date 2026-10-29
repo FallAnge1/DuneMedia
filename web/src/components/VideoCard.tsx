@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { mediaUrl, type Video } from "../lib/api";
 import { formatDuration, telegramUrl } from "../lib/format";
-import { IconCheck, IconDownload, IconFilm, IconHeart, OrientationIcon } from "./Icons";
+import { IconBookmark, IconCheck, IconDownload, IconFilm, IconHeart, OrientationIcon } from "./Icons";
 
 /** Высота подписи под карточкой (название + теги), учитывается в раскладке сетки. */
 export const CAPTION_H = 44;
@@ -84,7 +84,7 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
 
   return (
     <div
-      className={`card${active ? " is-active" : ""}${selected ? " is-selected" : ""}`}
+      className={`card${active ? " is-active" : ""}${active && playing ? " is-playing" : ""}${selected ? " is-selected" : ""}`}
       style={{ transform: `translate3d(${props.x}px, ${props.y}px, 0)`, width: props.width, height: props.height }}
       onPointerEnter={(e) => {
         pointerType.current = e.pointerType;
@@ -155,9 +155,11 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
             <button
               type="button"
               className={`card-save${saved ? " is-saved" : ""}`}
+              aria-label={saved ? "Сохранено на доске — изменить" : "Сохранить на доску"}
+              title={saved ? "Сохранено на доске" : "Сохранить на доску"}
               onClick={(e) => props.onSave(video.id, e.currentTarget.getBoundingClientRect())}
             >
-              {saved ? "Сохранено" : "Сохранить"}
+              <IconBookmark size={15} filled={saved} />
             </button>
             <a
               className="card-dl"
@@ -168,7 +170,7 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
               title="Скачать (откроется пост в Telegram)"
               draggable={false}
             >
-              <IconDownload size={16} />
+              <IconDownload size={15} />
             </a>
             <button
               type="button"
@@ -177,7 +179,7 @@ export const VideoCard = memo(function VideoCard(props: CardProps) {
               aria-pressed={favorite}
               onClick={() => props.onToggleFavorite(video.id)}
             >
-              <IconHeart size={16} filled={favorite} />
+              <IconHeart size={15} filled={favorite} />
             </button>
           </>
         )}
