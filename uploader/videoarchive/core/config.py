@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import tempfile
+import threading
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,10 +34,10 @@ def default_ai_providers() -> list[AIProviderConfig]:
     Пустой список моделей — программа сама спросит у провайдера актуальные бесплатные vision-модели.
     """
     return [
-        AIProviderConfig("groq", models=["qwen/qwen3.6-27b", "meta-llama/llama-4-scout-17b-16e-instruct"]),
+        AIProviderConfig("groq", models=[]),  # берутся у Groq: модели там часто переименовывают
         AIProviderConfig("openrouter", models=[]),
         AIProviderConfig("workers_ai", models=[]),  # модель по умолчанию задана на сайте (AI_MODEL)
-        AIProviderConfig("gemini", models=["gemini-flash-latest", "gemini-2.5-flash"]),
+        AIProviderConfig("gemini", models=["gemini-2.5-flash", "gemini-flash-latest"]),
         AIProviderConfig("ollama", enabled=False, models=["qwen2.5vl:7b", "gemma3:4b"], base_url="http://localhost:11434"),
     ]
 
@@ -114,14 +116,29 @@ class Config:
         return next((p for p in self.ai_providers if p.id == provider_id), None)
 
 
+_write_lock = threading.Lock()
+
+
 def write_json_atomic(path: Path, data: Any) -> None:
-    """Запись через временный файл: при сбое старый файл не портится."""
+    """Запись через временный файл: при сбое старый файл не портится.
+
+    Записи идут по одной: на Windows две одновременные замены одного файла
+    дают PermissionError. Короткие блокировки (антивирус, индексатор) пережидаем.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    with _write_lock:
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            for attempt in range(10):
+                try:
+                    os.replace(tmp, path)
+                    break
+                except PermissionError:
+                    if attempt == 9:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise

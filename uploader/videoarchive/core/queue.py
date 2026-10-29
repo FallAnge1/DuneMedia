@@ -112,6 +112,7 @@ class QueueStore:
     def __init__(self, path: Path | None = None):
         self.path = path or data_dir() / "queue.json"
         self._lock = threading.RLock()
+        self._save_lock = threading.Lock()  # снимок и запись одним шагом: старый снимок не перетрёт новый
         self._items: dict[str, QueueItem] = {}
         self._load()
 
@@ -140,9 +141,10 @@ class QueueStore:
             self._items[item.id] = item
 
     def save(self) -> None:
-        with self._lock:
-            data = {"version": 1, "items": [i.to_dict() for i in self._items.values()]}
-        write_json_atomic(self.path, data)
+        with self._save_lock:
+            with self._lock:
+                data = {"version": 1, "items": [i.to_dict() for i in self._items.values()]}
+            write_json_atomic(self.path, data)
 
     # ---- доступ ----
 

@@ -43,6 +43,10 @@ class ModelUnavailable(ProviderError):
     """Модели нет или её отключили — пробуем следующую модель того же провайдера."""
 
 
+class ModelTimeout(ModelUnavailable):
+    """Модель не ответила вовремя (у Gemini «-latest»-алиасы иногда зависают) — пробуем следующую."""
+
+
 @dataclass
 class Answer:
     text: str
@@ -134,7 +138,25 @@ class Provider:
             except ModelUnavailable as err:
                 log.info("%s/%s недоступна: %s", self.id, model, err)
                 last = err
+        # Модели из настроек пропали (провайдеры их переименовывают) — пробуем актуальные.
+        for model in self._fresh_models(models):
+            try:
+                answer = self.call(model, images, prompt, system)
+                log.warning("%s: модели из настроек недоступны, работает %s — обновите список в настройках", self.id, model)
+                return answer
+            except ModelUnavailable as err:
+                log.info("%s/%s недоступна: %s", self.id, model, err)
+                last = err
         raise ProviderError(f"ни одна модель не доступна ({last})")
+
+    def _fresh_models(self, tried: list[str]) -> list[str]:
+        if not self.cfg.models:
+            return []  # список и так взят у провайдера
+        try:
+            return [m for m in self.discover_models() if m not in tried][:3]
+        except ProviderError as err:
+            log.info("%s: не удалось получить список моделей: %s", self.id, err)
+            return []
 
     def call(self, model: str, images: list[Path], prompt: str, system: str) -> Answer:
         raise NotImplementedError
@@ -174,7 +196,7 @@ class Provider:
         try:
             return self.http.post(url, **kw)
         except httpx.TimeoutException as err:
-            raise ProviderError("таймаут") from err
+            raise ModelTimeout("таймаут") from err
         except httpx.TransportError as err:
             raise ProviderError(f"нет связи ({err.__class__.__name__})") from err
 
@@ -241,32 +263,30 @@ class OpenRouter(Provider):
         return {"Authorization": f"Bearer {self.cfg.api_key}", "HTTP-Referer": "https://github.com/FallAnge1/DuneMedia",
                 "X-Title": "VideoArchive Uploader"}
 
+    # Отказы, которые касаются одной модели, а не ключа: платная модель при лимите ключа $0,
+    # модель только для «агентных» приложений, перегрузка у поставщика конкретной модели.
+    MODEL_ONLY = re.compile(r"limit exceeded|agentic|upstream|not available|no endpoints|insufficient credits", re.I)
+
     def models(self) -> list[str]:
         models = super().models()
         if not self.cfg.models:
             models = models[:3] + [self.ROUTER]
         return models
 
-    def ask(self, images: list[Path], prompt: str, system: str) -> Answer:
-        # OpenRouter сам перебирает модели из массива models (до 3) — один запрос вместо нескольких.
-        models = self.models()
-        if not models:
-            raise ProviderError("не задано ни одной модели")
-        for i in range(0, len(models), 3):
-            batch = models[i : i + 3]
-            res = self._post(f"{self.URL}/chat/completions", headers=self._headers(), json={
-                "model": batch[0], "models": batch, "messages": openai_messages(images, prompt, system),
-                "temperature": 0.2, "max_tokens": 700,
-            })
-            try:
-                self._raise_for(res, batch[0])
-            except ModelUnavailable:
-                continue
-            data = res.json()
-            if "error" in data and "choices" not in data:
-                raise ProviderError(str(data["error"])[:200])
-            return Answer(openai_text(data), data.get("model") or batch[0])
-        raise ProviderError("ни одна модель не доступна")
+    def call(self, model: str, images: list[Path], prompt: str, system: str) -> Answer:
+        res = self._post(f"{self.URL}/chat/completions", headers=self._headers(), json={
+            "model": model, "messages": openai_messages(images, prompt, system), "temperature": 0.2, "max_tokens": 700,
+        })
+        if res.status_code in (402, 403, 429) and self.MODEL_ONLY.search(res.text):
+            raise ModelUnavailable(short_error(res))
+        self._raise_for(res, model)
+        data = res.json()
+        if "error" in data and "choices" not in data:
+            raise ModelUnavailable(str(data["error"])[:200])
+        text = openai_text(data)
+        if not text.strip():
+            raise ModelUnavailable("пустой ответ")
+        return Answer(text, data.get("model") or model)
 
     def _discover(self) -> list[str]:
         res = self._get(f"{self.URL}/models")
@@ -275,8 +295,11 @@ class OpenRouter(Provider):
         for m in res.json().get("data", []):
             pricing = m.get("pricing") or {}
             free = m["id"].endswith(":free") or (str(pricing.get("prompt")) in ("0", "0.0") and str(pricing.get("completion")) in ("0", "0.0"))
-            inputs = (m.get("architecture") or {}).get("input_modalities") or []
-            if free and "image" in inputs and m["id"] != self.ROUTER:
+            arch = m.get("architecture") or {}
+            inputs = arch.get("input_modalities") or []
+            outputs = arch.get("output_modalities") or ["text"]
+            special = re.search(r"safety|guard", m["id"], re.I)  # модерация, а не описание кадров
+            if free and "image" in inputs and outputs == ["text"] and not special and m["id"] != self.ROUTER:
                 found.append((m.get("context_length") or 0, m["id"]))
         return [mid for _, mid in sorted(found, reverse=True)]
 
